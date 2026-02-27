@@ -1,6 +1,6 @@
 // ============================================================
 // db.js - Pool de conexiones MySQL con mysql2/promise
-// Compatible con Hostinger y ESM (type: "module")
+// Compatible con Hostinger (127.0.0.1) y ESM (type: "module")
 // ============================================================
 import mysql from 'mysql2/promise';
 
@@ -10,54 +10,63 @@ function getPool() {
     if (pool) return pool;
 
     pool = mysql.createPool({
-        host: process.env.DB_HOST,
+        host: process.env.DB_HOST || '127.0.0.1',
         port: parseInt(process.env.DB_PORT || '3306'),
         user: process.env.DB_USER,
         password: process.env.DB_PASSWORD,
         database: process.env.DB_NAME,
         waitForConnections: true,
-        connectionLimit: 10,
+        connectionLimit: 5,
         queueLimit: 0,
         enableKeepAlive: true,
-        keepAliveInitialDelay: 0,
-        // Reconexión automática
-        connectTimeout: 10000,
+        keepAliveInitialDelay: 30000,
+        connectTimeout: 15000,
+        // Importante en Hostinger: MySQL local no necesita SSL
+        ssl: false,
+        // Reconexión automática ante pérdida de conexión
+        namedPlaceholders: false,
     });
-
-    // Verificar conexión al iniciar
-    pool.getConnection()
-        .then(conn => {
-            console.log('✅ MySQL conectado:', process.env.DB_HOST, '/', process.env.DB_NAME);
-            conn.release();
-        })
-        .catch(err => {
-            console.error('❌ Error conectando a MySQL:', err.message);
-            console.error('   Verifica DB_HOST, DB_USER, DB_PASSWORD, DB_NAME en .env');
-        });
 
     return pool;
 }
 
 /**
- * Ejecuta una query con parámetros y retorna [rows, fields]
+ * Verifica la conexión y la retorna — llamar durante el inicio del servidor
+ */
+export async function verificarConexionDB() {
+    try {
+        const conn = await getPool().getConnection();
+        conn.release();
+        console.log('✅ MySQL conectado correctamente → DB:', process.env.DB_NAME);
+        return true;
+    } catch (err) {
+        console.error('❌ MySQL ERROR:', err.message);
+        console.error('   Host:', process.env.DB_HOST, '| DB:', process.env.DB_NAME);
+        return false; // No crashear — el bot puede funcionar sin BD (con degradación)
+    }
+}
+
+/**
+ * Ejecuta una query con parámetros preparados.
+ * Retorna array de filas o lanza error.
  */
 export async function query(sql, params = []) {
     try {
-        const [rows, fields] = await getPool().execute(sql, params);
+        const [rows] = await getPool().execute(sql, params);
         return rows;
     } catch (err) {
-        console.error('❌ DB Error en query:', err.message);
-        console.error('   SQL:', sql);
+        console.error('❌ DB query error:', err.message);
+        console.error('   SQL:', sql.substring(0, 120));
         throw err;
     }
 }
 
 /**
- * Retorna una sola fila o null
+ * Retorna la primera fila o null.
  */
 export async function queryOne(sql, params = []) {
     const rows = await query(sql, params);
-    return rows[0] || null;
+    return rows[0] ?? null;
 }
 
 export default getPool;
