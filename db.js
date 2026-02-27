@@ -1,13 +1,24 @@
 // ============================================================
 // db.js - Pool de conexiones MySQL con mysql2/promise
-// Compatible con Hostinger y ESM (type: "module")
+// Si la BD no está configurada → funciona en modo memoria (sin crashes)
 // ============================================================
 import mysql from 'mysql2/promise';
 
 let pool = null;
+let dbActiva = false;
 
-function getPool() {
+// Detectar si las credenciales son placeholders o están vacías
+function credencialesConfiguradas() {
+    const host = process.env.DB_HOST || '';
+    return host && host !== 'srv1234.hstgr.io' && host !== 'localhost_placeholder';
+}
+
+export function getPool() {
     if (pool) return pool;
+    if (!credencialesConfiguradas()) {
+        console.warn('⚠️  [DB] DB_HOST no configurado o es placeholder. Modo memoria activado.');
+        return null;
+    }
 
     pool = mysql.createPool({
         host: process.env.DB_HOST,
@@ -19,45 +30,52 @@ function getPool() {
         connectionLimit: 10,
         queueLimit: 0,
         enableKeepAlive: true,
-        keepAliveInitialDelay: 0,
-        // Reconexión automática
         connectTimeout: 10000,
     });
 
-    // Verificar conexión al iniciar
+    // Verificar conexión sin bloquear el arranque
     pool.getConnection()
         .then(conn => {
-            console.log('✅ MySQL conectado:', process.env.DB_HOST, '/', process.env.DB_NAME);
+            dbActiva = true;
+            console.log('✅ [DB] MySQL conectado:', process.env.DB_HOST, '/', process.env.DB_NAME);
             conn.release();
         })
         .catch(err => {
-            console.error('❌ Error conectando a MySQL:', err.message);
-            console.error('   Verifica DB_HOST, DB_USER, DB_PASSWORD, DB_NAME en .env');
+            dbActiva = false;
+            console.error('❌ [DB] No se pudo conectar a MySQL:', err.message);
+            console.error('   ↳ Verifica DB_HOST, DB_USER, DB_PASSWORD, DB_NAME en .env');
+            console.error('   ↳ El bot seguirá funcionando EN MEMORIA (los datos no persisten al reiniciar)');
         });
 
     return pool;
 }
 
 /**
- * Ejecuta una query con parámetros y retorna [rows, fields]
+ * Ejecuta una query. Retorna las filas o null si falla/no hay BD.
+ * NUNCA relanza el error — el bot nunca debe crashear por la BD.
  */
 export async function query(sql, params = []) {
+    const p = getPool();
+    if (!p) return null; // Sin BD → modo memoria
+
     try {
-        const [rows, fields] = await getPool().execute(sql, params);
+        const [rows] = await p.execute(sql, params);
         return rows;
     } catch (err) {
-        console.error('❌ DB Error en query:', err.message);
-        console.error('   SQL:', sql);
-        throw err;
+        console.error('❌ [DB] Error en query:', err.message);
+        console.error('   SQL:', sql.slice(0, 80));
+        return null; // Retorna null en vez de crashear
     }
 }
 
 /**
- * Retorna una sola fila o null
+ * Retorna una sola fila o null.
  */
 export async function queryOne(sql, params = []) {
     const rows = await query(sql, params);
-    return rows[0] || null;
+    return (rows && rows.length > 0) ? rows[0] : null;
 }
+
+export function isDbActiva() { return dbActiva; }
 
 export default getPool;
