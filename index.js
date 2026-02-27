@@ -1,16 +1,23 @@
 // ============================================================
 // index.js - Servidor principal del Chatbot WhatsApp
 // ============================================================
-// load environment variables as the first thing using ESM-friendly import
 import 'dotenv/config';
 
 import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { procesarMensaje, procesarImagen, procesarComandoAdmin } from './flujo.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+const PORT = process.env.PORT || 3000;
+
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
+// ─── SERVIR IMÁGENES QR PÚBLICAMENTE ─────────────────────
+// Esto permite que WhatsApp descargue el QR desde:
+// https://tu-dominio.com/qrs/qrcodeyapera.png
+app.use('/qrs', express.static(path.join(__dirname, 'qrs')));
 
 // ─── VERIFICACIÓN DEL WEBHOOK (Meta lo requiere) ─────────
 app.get('/webhook', (req, res) => {
@@ -60,8 +67,10 @@ app.post('/webhook', async (req, res) => {
 
     // ── Botón interactivo ─────────────────────────────────
     else if (message.type === 'interactive') {
-      const buttonId = message.interactive?.button_reply?.id ||
-                       message.interactive?.list_reply?.id;
+      const buttonId =
+        message.interactive?.button_reply?.id ||
+        message.interactive?.list_reply?.id;
+
       if (buttonId) {
         await procesarMensaje(phone, buttonId, 'interactive');
       }
@@ -71,6 +80,23 @@ app.post('/webhook', async (req, res) => {
     else if (message.type === 'image') {
       const imageId = message.image?.id;
       await procesarImagen(phone, imageId);
+    }
+
+    // ── Audio / video / documentos ────────────────────────
+    else if (['audio', 'video', 'document', 'sticker'].includes(message.type)) {
+      // Solo en estado esperando comprobante tratar como señal
+      const { procesarImagen: pi } = await import('./flujo.js');
+      // Ignorar, solo notificar
+      const { enviarTexto } = await import('./whatsapp.js');
+      const { getEstado } = await import('./storage.js');
+      const conv = getEstado(phone);
+      if (conv.estado === 'ESPERANDO_COMPROBANTE' || conv.estado === 'PAGO_EN_REVISION') {
+        await enviarTexto(phone,
+          `📎 Recibimos un archivo. Si es tu comprobante, por favor envíalo como *imagen* (foto). ¡Gracias! 📸`
+        );
+      } else {
+        await procesarMensaje(phone, 'INICIO', 'text');
+      }
     }
 
     // ── Otros tipos ───────────────────────────────────────
@@ -83,12 +109,13 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ─── RUTA DE PRUEBA ───────────────────────────────────────
+// ─── RUTA DE ESTADO ───────────────────────────────────────
 app.get('/', (req, res) => {
   res.json({
     status: 'running',
     bot: 'Grass Sintético Chatbot',
-    version: '1.0.0'
+    version: '2.0.0',
+    uptime: process.uptime()
   });
 });
 
@@ -96,11 +123,13 @@ app.get('/', (req, res) => {
 app.listen(PORT, () => {
   console.log(`
   ╔════════════════════════════════════╗
-  ║   🌿 GRASS SINTÉTICO CHATBOT 🌿    ║
-  ║   Servidor corriendo en: ${PORT}      ║
+  ║   🌿 GRASS SINTÉTICO CHATBOT 🌿   ║
+  ║         Versión 2.0.0              ║
+  ║   Servidor en puerto: ${PORT}         ║
   ╚════════════════════════════════════╝
   
   ✅ Webhook: http://localhost:${PORT}/webhook
+  🖼️  QR Endpoint: http://localhost:${PORT}/qrs/qrcodeyapera.png
   📱 Esperando mensajes de WhatsApp...
   `);
 });

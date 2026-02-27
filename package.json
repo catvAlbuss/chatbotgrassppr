@@ -1,7 +1,7 @@
 {
   "name": "chatbot-grass-whatsapp",
-  "version": "1.0.0",
-  "description": "Chatbot WhatsApp para Grass Sintético con reservas y pagos",
+  "version": "2.1.0",
+  "description": "Chatbot WhatsApp para Grass Sintético con reservas, pagos y MySQL",
   "main": "index.js",
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
     "axios": "^1.6.0",
     "dotenv": "^16.6.1",
     "express": "^4.18.2",
+    "mysql2": "^3.18.2",
     "openai": "^4.20.0",
     "qrcode": "^1.5.3"
   },

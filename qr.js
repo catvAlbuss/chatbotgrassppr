@@ -8,6 +8,9 @@ import path from 'path';
 // Crear carpeta para QRs si no existe
 mkdirSync('./qrs', { recursive: true });
 
+/**
+ * Genera un QR dinámico para una reserva específica y lo guarda en ./qrs/
+ */
 export async function generarQRPago(reservaId, monto, nombreCliente) {
   const info = [
     `GRASS SINTÉTICO`,
@@ -29,20 +32,33 @@ export async function generarQRPago(reservaId, monto, nombreCliente) {
   return filePath;
 }
 
-// Para WhatsApp necesitamos una URL pública del QR
-// Por ahora retornamos el texto de pago formateado
+/**
+ * Retorna la URL pública del QR de Yape (imagen fija).
+ * La imagen debe estar en ./qrs/qrcodeyapera.png
+ * Configura QR_PUBLIC_URL en tu .env con la URL de tu servidor.
+ */
+export function getUrlQRYape() {
+  if (!process.env.QR_PUBLIC_URL) return null;
+  return `${process.env.QR_PUBLIC_URL}/qrs/qrcodeyapera.png`;
+}
+
+/**
+ * Retorna el texto formateado con instrucciones de pago.
+ */
 export function getMensajePago(reservaId, monto, nombreCliente) {
   return `💳 *INSTRUCCIONES DE PAGO*\n\n` +
     `📋 Reserva: *${reservaId}*\n` +
-    `👤 Cliente: ${nombreCliente}\n` +
-    `💰 Monto a pagar: *S/. ${monto}*\n\n` +
+    `👤 A nombre de: ${nombreCliente}\n` +
+    `💰 *Monto a pagar: S/. ${monto}*\n\n` +
     `─────────────────\n` +
-    `📱 *YAPE/PLIN*\n` +
+    `📱 *YAPE / PLIN*\n` +
     `Número: *${process.env.PAYMENT_YAPE}*\n` +
-    `Titular: ${process.env.PAYMENT_ACCOUNT}\n` +
+    `Titular: *${process.env.PAYMENT_ACCOUNT}*\n` +
     `─────────────────\n\n` +
-    `⏰ Tienes *10 minutos* para enviar:\n` +
-    `1️⃣ Tu número de operación\n` +
-    `2️⃣ Captura del comprobante\n\n` +
+    `⚠️ En el concepto/descripción escribe:\n` +
+    `*${reservaId}*\n\n` +
+    `⏰ Tienes *10 minutos* para:\n` +
+    `1️⃣ Enviarnos el *número de operación*\n` +
+    `2️⃣ Una *captura del comprobante*\n\n` +
     `_Si no enviás en 10 min, la reserva se cancelará automáticamente._`;
 }
