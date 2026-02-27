@@ -663,38 +663,20 @@ export async function procesarImagen(phone, imageId) {
     await setEstado(phone, 'PAGO_EN_REVISION');
 
     const reserva = await getReserva(reservaId);
-    const adminPhone = process.env.ADMIN_PHONE;
-
     const msgAdmin =
       `🔔 *NUEVO PAGO PARA REVISAR*\n\n` +
       `📋 *${reservaId}*\n` +
       `👤 ${reserva?.nombres} ${reserva?.apellidos}\n` +
-      `🪦 DNI: ${reserva?.dni}\n` +
+      `🪪 DNI: ${reserva?.dni}\n` +
       `📱 Tel: ${phone}\n` +
-      `🏙️ ${reserva?.tipoCancha}\n` +
+      `🏟️ ${reserva?.tipoCancha}\n` +
       `📅 ${reserva?.fechaDisplay}\n` +
       `⏰ ${(reserva?.horasElegidas || reserva?.horas)?.join(', ')}\n` +
       `💰 Adelanto: S/. ${reserva?.montoReserva}\n` +
-      `🔢 Op: ${reserva?.numeroOperacion || 'Pendiente'}\n\n` +  // ← typo corregido: numeroper → numeroOperacion
-      `Para confirmar responde:\n` +
+      `🔢 Op: ${reserva?.numeroper || 'Pendiente'}\n\n` +
       `✅ APROBAR_${reservaId}\n❌ RECHAZAR_${reservaId}`;
 
-    // ── Enviar al admin con log detallado ─────────────────
-    console.log(`🔔 Enviando notif al admin: ${adminPhone}`);
-    try {
-      await enviarTexto(adminPhone, msgAdmin);
-      console.log(`✅ Notificación al admin enviada correctamente.`);
-    } catch (err) {
-      const data = err.response?.data;
-      console.error(`❌ FALLO al notificar al admin (${adminPhone}):`, data || err.message);
-      if (data?.error?.code === 131047) {
-        console.error(`   ↳ El admin no ha enviado mensajes al bot en las últimas 24h.`);
-        console.error(`   ↳ Solución: El admin debe escribirle al bot primero.`);
-      } else if (data?.error?.code === 100) {
-        console.error(`   ↳ Número inválido. Verifica ADMIN_PHONE en .env: ${adminPhone}`);
-      }
-    }
-
+    await enviarTexto(process.env.ADMIN_PHONE, msgAdmin);
     await enviarTexto(phone,
       `📸 *¡Comprobante recibido!*\n\n` +
       `⏳ Nuestro personal lo está revisando.\nTe avisamos pronto. 🙏`
