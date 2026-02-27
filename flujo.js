@@ -106,10 +106,15 @@ async function _enviarListaHoras(phone, turno, disponibles, horasElegidas, titul
     };
   });
 
-  // Ítem de navegación entre turnos (si aplica)
+  // ── Separar la nav COMPLETAMENTE de los ítems de hora ──
+  // Regla WhatsApp: máx 10 filas en total (= 9 horas + 1 nav, o 10 horas sin nav)
+  // Bug anterior: se pusheaba nav en items[] Y luego se volvía a agregar → ID duplicado ❌
+  const MAX_HORAS = paginaNav ? 9 : 10;
+  const rowsFinales = items.slice(0, MAX_HORAS); // solo horas, sin nav
+
   if (paginaNav) {
-    const navLabel = paginaNav === 'tarde' ? '>> Ver tarde/noche' : '<< Ver manana';  // ≤18 chars ✅
-    items.push({
+    const navLabel = paginaNav === 'tarde' ? '>> Ver tarde/noche' : '<< Ver manana';
+    rowsFinales.push({                           // nav se agrega exactamente 1 vez ✅
       id: `PAGINA_${paginaNav.toUpperCase()}`,
       title: navLabel,
       description: 'Ver otros horarios'
@@ -119,10 +124,6 @@ async function _enviarListaHoras(phone, turno, disponibles, horasElegidas, titul
   const resumen = horasElegidas.length > 0
     ? `\n\n🛒 *Elegidas:* ${horasElegidas.join(', ')} · S/. ${horasElegidas.length * PRECIO_HORA}`
     : '';
-
-  // Tomar máx 9 items + 1 nav = 10 total
-  const rowsFinales = items.slice(0, paginaNav ? 9 : 10);
-  if (paginaNav) rowsFinales.push(items[items.length - 1]); // siempre incluir nav
 
   await enviarLista(
     phone,
