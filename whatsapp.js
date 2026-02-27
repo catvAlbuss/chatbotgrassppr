@@ -25,7 +25,11 @@ export async function enviarTexto(to, texto) {
       { headers: headers() }
     );
   } catch (err) {
-    console.error('❌ Error enviando texto:', err.response?.data || err.message);
+    const data = err.response?.data;
+    console.error('❌ Error enviando texto:', data || err.message);
+    if (data?.error?.code === 190) {
+      console.error('   ↳ Token inválido o expirado. Actualiza WHATSAPP_TOKEN en .env y reinicia el servidor.');
+    }
   }
 }
 
@@ -46,7 +50,11 @@ export async function enviarImagen(to, imageUrl, caption = '') {
       { headers: headers() }
     );
   } catch (err) {
-    console.error('❌ Error enviando imagen:', err.response?.data || err.message);
+    const data = err.response?.data;
+    console.error('❌ Error enviando imagen:', data || err.message);
+    if (data?.error?.code === 190) {
+      console.error('   ↳ Token inválido o expirado. Actualiza WHATSAPP_TOKEN en .env y reinicia el servidor.');
+    }
   }
 }
 
@@ -75,7 +83,11 @@ export async function enviarBotones(to, titulo, cuerpo, botones) {
       { headers: headers() }
     );
   } catch (err) {
-    console.error('❌ Error enviando botones:', err.response?.data || err.message);
+    const data = err.response?.data;
+    console.error('❌ Error enviando botones:', data || err.message);
+    if (data?.error?.code === 190) {
+      console.error('   ↳ Token inválido o expirado. Actualiza WHATSAPP_TOKEN en .env y reinicia el servidor.');
+    }
     // Fallback a texto si falla
     const texto = `${titulo}\n\n${cuerpo}\n\n` + botones.map((b, i) => `${i + 1}. ${b.title}`).join('\n');
     await enviarTexto(to, texto);
@@ -104,6 +116,10 @@ export async function enviarLista(to, titulo, cuerpo, botonTexto, secciones) {
       { headers: headers() }
     );
   } catch (err) {
-    console.error('❌ Error enviando lista:', err.response?.data || err.message);
+    const data = err.response?.data;
+    console.error('❌ Error enviando lista:', data || err.message);
+    if (data?.error?.code === 190) {
+      console.error('   ↳ Token inválido o expirado. Actualiza WHATSAPP_TOKEN en .env y reinicia el servidor.');
+    }
   }
 }

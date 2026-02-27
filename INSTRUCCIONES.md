@@ -58,7 +58,7 @@ Abre el archivo `.env` con el Bloc de notas y llena:
 
 ```
 OPENAI_API_KEY=tu_nueva_api_key_de_openai
-WHATSAPP_TOKEN=token_que_te_dio_meta
+WHATSAPP_TOKEN=token_que_te_dio_meta    # este token expira tras 24 horas; véase nota abajo
 PHONE_NUMBER_ID=id_del_numero_en_meta
 VERIFY_TOKEN=cualquier_palabra_secreta_tuya
 ADMIN_PHONE=51987654321
@@ -67,6 +67,12 @@ PAYMENT_PLIN=987654321
 PAYMENT_ACCOUNT=Grass Sintético SAC
 PORT=3000
 ```
+
+> **Nota:** Los tokens temporales de WhatsApp tienen caducidad (generalmente 24 horas).
+> Cuando el bot muestra errores de tipo `OAuthException code 190` significa que el
+> `WHATSAPP_TOKEN` ha expirado. Regenera uno nuevo en el panel de Meta Developers,
+> actualiza el `.env` y reinicia el servidor. Para entornos de producción usa un
+> token de larga duración o automatiza su renovación.
 
 ---
 
