@@ -53,87 +53,86 @@ async function mostrarProductos(phone) {
 }
 
 // ─── HORAS DISPONIBLES (lista interactiva) ───────────────
-async function mostrarHorasDisponibles(phone, fecha, horasElegidas = [], pagina = 'manana') {
-  const disponibles = (await getSlotsDisponibles(fecha))
-    .filter(h => !horasElegidas.includes(h));
+// WhatsApp límites: título sección ≤24 chars, máx 10 filas/lista
+// Muestra TODOS los slots: ✅ disponibles y 🔴 ocupados
+async function mostrarHorasDisponibles(phone, fecha, horasYaElegidas = [], pagina = 'manana') {
+  const TODOS = ['07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00',
+    '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'];
+  const disponibles = await getSlotsDisponibles(fecha); // ya en BD
 
-  if (disponibles.length === 0) {
-    await enviarTexto(phone,
-      `😔 No quedan horarios disponibles para esa fecha.\n\n` +
-      `Escribe otra fecha o *MENU* para volver al inicio.`
+  // Dividir por turno  (sin "horasYaElegidas" — esas siguen disponibles hasta confirmar)
+  const manana = TODOS.filter(h => parseInt(h) < 14);
+  const tarde = TODOS.filter(h => parseInt(h) >= 14);
+
+  if (pagina === 'manana') {
+    await setEstado(phone, 'ESPERANDO_HORA', { paginaHoras: 'manana' });
+    await _enviarListaHoras(phone, manana, disponibles, horasYaElegidas,
+      'Manana 07:00-13:00',           // ≤24 chars ✅
+      tarde.length > 0 ? 'tarde' : null
     );
-    await setEstado(phone, 'ESPERANDO_FECHA');
-    return;
+  } else {
+    await setEstado(phone, 'ESPERANDO_HORA', { paginaHoras: 'tarde' });
+    await _enviarListaHoras(phone, tarde, disponibles, horasYaElegidas,
+      'Tarde/Noche 14:00-22:00',      // ≤24 chars ✅ (24 chars exactos)
+      manana.length > 0 ? 'manana' : null
+    );
   }
-
-  // Dividir mañana (07-13) y tarde/noche (14-22)
-  const slotManana = disponibles.filter(h => parseInt(h) < 14);
-  const slotTarde = disponibles.filter(h => parseInt(h) >= 14);
-
-  // Si todos caben en ≤9 filas, mostrar todo en una lista
-  if (disponibles.length <= 9) {
-    await _enviarListaHoras(phone, fecha, horasElegidas, disponibles, '⏰ Todos los horarios', null);
-    return;
-  }
-
-  // Paginar: mostrar mañana o tarde según la página activa
-  const esPaginaManana = pagina === 'manana';
-  const slotsAMostrar = esPaginaManana ? slotManana : slotTarde;
-  const titulo = esPaginaManana ? '🌅 Horarios mañana (07:00–13:00)' : '🌆 Horarios tarde/noche (14:00–22:00)';
-
-  // Si la página activa no tiene slots, pasar a la otra
-  if (slotsAMostrar.length === 0) {
-    const otraPagina = esPaginaManana ? 'tarde' : 'manana';
-    return mostrarHorasDisponibles(phone, fecha, horasElegidas, otraPagina);
-  }
-
-  // Guardar la página actual en el estado para los botones de navegación
-  await setEstado(phone, 'ESPERANDO_HORA', { paginaHoras: pagina });
-
-  await _enviarListaHoras(
-    phone, fecha, horasElegidas,
-    slotsAMostrar.slice(0, 9), // WhatsApp max 9 para dejar margen al nav
-    titulo,
-    esPaginaManana && slotTarde.length > 0 ? 'tarde' :
-      !esPaginaManana && slotManana.length > 0 ? 'manana' : null
-  );
 }
 
 /**
- * Envía la lista de WhatsApp con los slots dados.
- * Si `paginaSiguiente` no es null, añade un ítem de navegación al final.
+ * Construye y envía la lista de WhatsApp.
+ * - `turno`          : array de horas del turno (manana o tarde)
+ * - `disponibles`    : horas libres en BD
+ * - `horasElegidas`  : las que el usuario ya agregó al carrito
+ * - `paginaNav`      : 'manana' | 'tarde' | null (para ítem de navegación)
+ *
+ * WhatsApp: título sección ≤24 chars, ≤10 filas totales, ídem título ítem ≤24
  */
-async function _enviarListaHoras(phone, fecha, horasElegidas, slots, titulo, paginaSiguiente) {
-  const items = slots.map(h => ({
-    id: `HORA_${h.replace(':', '')}`,
-    title: `🕐 ${h}`,
-    description: `S/. ${PRECIO_HORA} · disponible`
-  }));
+async function _enviarListaHoras(phone, turno, disponibles, horasElegidas, tituloSeccion, paginaNav) {
+  const items = turno.map(h => {
+    const estaEnCarrito = horasElegidas.includes(h);
+    const estaDisponible = disponibles.includes(h);
+    const estaOcupado = !estaDisponible && !estaEnCarrito;
 
-  // Añadir botón de navegación como último ítem si hay más páginas
-  if (paginaSiguiente) {
-    const label = paginaSiguiente === 'tarde' ? '🌆 Ver tarde/noche →' : '🌅 Ver mañana →';
+    let emoji, desc;
+    if (estaEnCarrito) { emoji = '🛒'; desc = 'Ya en tu reserva'; }
+    else if (estaOcupado) { emoji = '🔴'; desc = 'Ocupado'; }
+    else { emoji = '✅'; desc = `S/. ${PRECIO_HORA} · libre`; }
+
+    return {
+      id: `HORA_${h.replace(':', '')}`,
+      title: `${emoji} ${h}`,          // máx ~8 chars ✅
+      description: desc
+    };
+  });
+
+  // Ítem de navegación entre turnos (si aplica)
+  if (paginaNav) {
+    const navLabel = paginaNav === 'tarde' ? '>> Ver tarde/noche' : '<< Ver manana';  // ≤18 chars ✅
     items.push({
-      id: `PAGINA_${paginaSiguiente.toUpperCase()}`,
-      title: label,
-      description: 'Ver más horarios disponibles'
+      id: `PAGINA_${paginaNav.toUpperCase()}`,
+      title: navLabel,
+      description: 'Ver otros horarios'
     });
   }
 
-  const resumenElegidas = horasElegidas.length > 0
-    ? `\n\n✅ *Ya elegiste:* ${horasElegidas.join(', ')} → S/. ${horasElegidas.length * PRECIO_HORA}`
+  const resumen = horasElegidas.length > 0
+    ? `\n\n🛒 *Elegidas:* ${horasElegidas.join(', ')} · S/. ${horasElegidas.length * PRECIO_HORA}`
     : '';
 
-  const secciones = [{ title: titulo, rows: items }];
+  // Tomar máx 9 items + 1 nav = 10 total
+  const rowsFinales = items.slice(0, paginaNav ? 9 : 10);
+  if (paginaNav) rowsFinales.push(items[items.length - 1]); // siempre incluir nav
 
   await enviarLista(
     phone,
-    '⏰ Elige tu hora',
-    `📅 *Horarios disponibles*${resumenElegidas}\n\nElige del menú 👇`,
-    '🕐 Ver horarios',
-    secciones
+    'Elige tu hora',
+    `📅 *Horarios disponibles*${resumen}\n\n✅ Libre · 🔴 Ocupado · 🛒 En tu reserva\n\nElige del menú 👇`,
+    'Ver horarios',
+    [{ title: tituloSeccion, rows: rowsFinales }]
   );
 }
+
 
 // ─── PROCESAR MENSAJE PRINCIPAL ──────────────────────────
 export async function procesarMensaje(phone, mensaje, tipo = 'text') {
@@ -466,16 +465,33 @@ async function procesarBoton(phone, buttonId, conv) {
   // ── Hora seleccionada desde la lista ───────────────────
   if (buttonId.startsWith('HORA_')) {
     const hora = buttonId.replace('HORA_', '').replace(/(\d{2})(\d{2})/, '$1:$2');
-    const ocupado = await isSlotOcupado(conv.datos.fecha, hora);
-    if (ocupado) {
-      await enviarTexto(phone, `❌ Las *${hora}* ya están ocupadas 😔\nElige otro horario:`);
-      const pag = conv.datos.paginaHoras || 'manana';
-      await mostrarHorasDisponibles(phone, conv.datos.fecha, conv.datos.horasElegidas || [], pag);
+    const pagActual = conv.datos.paginaHoras || 'manana';
+    const horasElegidas = conv.datos.horasElegidas || [];
+
+    // Ya está en el carrito del usuario
+    if (horasElegidas.includes(hora)) {
+      await enviarTexto(phone,
+        `🛒 Las *${hora}* ya están en tu reserva.\n\nElige otra hora o pulsa *Continuar*.`
+      );
+      await mostrarHorasDisponibles(phone, conv.datos.fecha, horasElegidas, pagActual);
       return;
     }
+
+    // Ocupada por otra reserva
+    const ocupado = await isSlotOcupado(conv.datos.fecha, hora);
+    if (ocupado) {
+      await enviarTexto(phone,
+        `🔴 Lo sentimos, las *${hora}* ya están ocupadas por otra persona.\n\nElige otro horario disponible (✅):`
+      );
+      await mostrarHorasDisponibles(phone, conv.datos.fecha, horasElegidas, pagActual);
+      return;
+    }
+
+    // ✅ Disponible → agregar al carrito
     await agregarHoraYPreguntar(phone, hora, conv);
     return;
   }
+
 
   // ── Agregar otra hora ──────────────────────────────────
   // Vuelve a la misma página donde estaba el usuario
