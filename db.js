@@ -1,53 +1,69 @@
 // ============================================================
 // db.js - Pool de conexiones MySQL con mysql2/promise
-// Compatible con Hostinger (127.0.0.1) y ESM (type: "module")
+// Compatible con Hostinger (localhost) y ESM (type: "module")
 // ============================================================
 import mysql from 'mysql2/promise';
 
 let pool = null;
 
-function getPool() {
-    if (pool) return pool;
+function env(name, fallback = undefined) {
+    const raw = process.env[name];
+    if (raw == null) return fallback;
 
-    pool = mysql.createPool({
-        host: process.env.DB_HOST || '127.0.0.1',
-        port: parseInt(process.env.DB_PORT || '3306'),
-        user: process.env.DB_USER,
-        password: process.env.DB_PASSWORD,
-        database: process.env.DB_NAME,
+    // Limpia espacios y comillas accidentales de paneles de hosting
+    const trimmed = String(raw).trim();
+    return trimmed.replace(/^['\"]|['\"]$/g, '');
+}
+
+function buildDbConfig() {
+    const host = env('DB_HOST', 'localhost');
+    const port = Number.parseInt(env('DB_PORT', '3306'), 10);
+
+    return {
+        host,
+        port: Number.isNaN(port) ? 3306 : port,
+        user: env('DB_USER'),
+        password: env('DB_PASSWORD'),
+        database: env('DB_NAME'),
         waitForConnections: true,
         connectionLimit: 5,
         queueLimit: 0,
         enableKeepAlive: true,
         keepAliveInitialDelay: 30000,
         connectTimeout: 15000,
-        // Importante en Hostinger: MySQL local no necesita SSL
+        // MySQL local en Hostinger no necesita SSL
         ssl: false,
-        // Reconexión automática ante pérdida de conexión
         namedPlaceholders: false,
-    });
+    };
+}
 
+function getPool() {
+    if (pool) return pool;
+    pool = mysql.createPool(buildDbConfig());
     return pool;
 }
 
 /**
- * Verifica la conexión y la retorna — llamar durante el inicio del servidor
+ * Verifica la conexion y la retorna - llamar durante el inicio del servidor
  */
 export async function verificarConexionDB() {
+    const cfg = buildDbConfig();
+
     try {
         const conn = await getPool().getConnection();
         conn.release();
-        console.log('✅ MySQL conectado correctamente → DB:', process.env.DB_NAME);
+        console.log('[OK] MySQL conectado correctamente -> DB:', cfg.database, '| Host:', cfg.host, '| User:', cfg.user);
         return true;
     } catch (err) {
-        console.error('❌ MySQL ERROR:', err.message);
-        console.error('   Host:', process.env.DB_HOST, '| DB:', process.env.DB_NAME);
-        return false; // No crashear — el bot puede funcionar sin BD (con degradación)
+        console.error('[ERR] MySQL ERROR:', err.message);
+        console.error('   Host:', cfg.host, '| DB:', cfg.database, '| User:', cfg.user);
+        console.error('   DB_PASSWORD length:', cfg.password ? String(cfg.password).length : 0);
+        return false; // No crashear - el bot puede funcionar sin BD (con degradacion)
     }
 }
 
 /**
- * Ejecuta una query con parámetros preparados.
+ * Ejecuta una query con parametros preparados.
  * Retorna array de filas o lanza error.
  */
 export async function query(sql, params = []) {
@@ -55,7 +71,7 @@ export async function query(sql, params = []) {
         const [rows] = await getPool().execute(sql, params);
         return rows;
     } catch (err) {
-        console.error('❌ DB query error:', err.message);
+        console.error('[ERR] DB query error:', err.message);
         console.error('   SQL:', sql.substring(0, 120));
         throw err;
     }
