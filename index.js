@@ -7,7 +7,8 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { procesarMensaje, procesarImagen, procesarComandoAdmin } from './flujo.js';
-import { verificarConexionDB } from './db.js';
+import { verificarConexionDB, query } from './db.js';
+import { enviarTexto } from './whatsapp.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -98,6 +99,18 @@ app.post('/webhook', async (req, res) => {
       }
     }
 
+    // ── Ubicación compartida por el usuario ────────────
+    else if (msg.type === 'location') {
+      const { setEstado } = await import('./storage.js');
+      const lat = msg.location?.latitude;
+      const lng = msg.location?.longitude;
+      
+      if (lat && lng) {
+        await setEstado(phone, 'MENU_PRINCIPAL', { lat, lng });
+        await enviarTexto(phone, `📍 Ubicación guardada: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      }
+    }
+
     // ── Cualquier otro → menú ─────────────────────────────
     else {
       await procesarMensaje(phone, 'hola', 'text');
@@ -133,6 +146,85 @@ async function iniciar() {
   💊 Health: /health
     `);
   });
+
+
+  // ─── REPORTE AUTOMÁTICO DIARIO ────────────────────────────
+  // Funciones de consulta a la BD
+  // ─── FUNCIONES DE CONSULTA BD ────────────────────────────
+  // async function obtenerReservasHoy() {
+  //   return await queryOne(
+  //     `SELECT 
+  //       COUNT(*)                          AS total_reservas,
+  //       SUM(costo_total)                  AS ingresos_brutos,
+  //       COUNT(DISTINCT phone)             AS clientes_unicos
+  //      FROM reservas
+  //      WHERE fecha = CURDATE()`
+  //   );
+  // }
+
+  // async function obtenerPagosPendientes() {
+  //   return await queryOne(
+  //     `SELECT COUNT(*) AS pendientes
+  //      FROM pagos_pendientes
+  //      WHERE expira_en > NOW()`
+  //   );
+  // }
+
+  // async function obtenerReservasPorCancha() {
+  //   return await query(
+  //     `SELECT 
+  //       tipo_cancha,
+  //       COUNT(*) AS reservas
+  //      FROM reservas
+  //      WHERE fecha = CURDATE()
+  //      GROUP BY tipo_cancha`
+  //   );
+  // }
+
+  // // ─── REPORTE AUTOMÁTICO DIARIO (cada 24 horas) ───────────
+  // const INTERVALO_REPORTE_MS =1000;
+
+  // async function enviarReporteDiario() {
+  //   try {
+  //     const { enviarTexto } = await import('./whatsapp.js');
+
+  //     const [resumen, pendientes, porCancha] = await Promise.all([
+  //       obtenerReservasHoy(),
+  //       obtenerPagosPendientes(),
+  //       obtenerReservasPorCancha(),
+  //     ]);
+
+  //     const fecha = new Date().toLocaleDateString('es-PE', {
+  //       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+  //     });
+
+  //     // Construir líneas por tipo de cancha
+  //     const lineasCancha = porCancha.length
+  //       ? porCancha.map(r => `   • ${r.tipo_cancha}: ${r.reservas} reserva(s)`).join('\n')
+  //       : '   • Sin reservas aún';
+
+  //     const mensaje =
+  //       `📊 *Reporte Diario — Grass Sintético*\n` +
+  //       `📅 ${fecha}\n\n` +
+  //       `👥 Clientes únicos:     ${resumen?.clientes_unicos  ?? 0}\n` +
+  //       `📋 Reservas del día:    ${resumen?.total_reservas   ?? 0}\n` +
+  //       `💰 Ingresos del día:    S/ ${Number(resumen?.ingresos_brutos ?? 0).toFixed(2)}\n` +
+  //       `⏳ Pagos pendientes:    ${pendientes?.pendientes    ?? 0}\n\n` +
+  //       `🏟️ *Por tipo de cancha:*\n${lineasCancha}`;
+
+  //     await enviarTexto(process.env.ADMIN_PHONE, mensaje);
+  //     console.log('📊 Reporte diario enviado correctamente');
+
+  //   } catch (err) {
+  //     console.error('❌ Error enviando reporte diario:', err.message);
+  //   }
+  // }
+
+  // // Ejecutar al arrancar y luego cada 24 horas
+  // enviarReporteDiario();
+  // setInterval(enviarReporteDiario, INTERVALO_REPORTE_MS);
+
+
 }
 
 // ─── MANEJADORES DE ERRORES GLOBALES ─────────────────────

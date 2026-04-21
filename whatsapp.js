@@ -5,6 +5,66 @@ import axios from 'axios';
 
 const BASE_URL = 'https://graph.facebook.com/v18.0';
 
+
+export async function enviarUbicacion(to) {
+  try {
+    await axios.post(
+      `${BASE_URL}/${process.env.PHONE_NUMBER_ID}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'location',
+        location: {
+          latitude: -9.9306,
+          longitude: -76.2422,
+          name: 'Grass Sintético Papa Roque',
+          address: 'Huánuco, Perú'
+        }
+      },
+      { headers: headers() }
+    );
+  } catch (err) {
+    console.error('❌ Error enviando ubicación:', err.response?.data || err.message);
+  }
+}
+
+
+export async function enviarUbicacionLugar(to, latitude, longitude, name) {
+  try {
+
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+
+    console.log("📍 FINAL CHECK:", { lat, lng, name });
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      console.log("❌ BLOQUEADO POR DATOS INVÁLIDOS");
+      return;
+    }
+
+    await axios.post(
+      `${BASE_URL}/${process.env.PHONE_NUMBER_ID}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to,
+        type: "location",
+        location: {
+          latitude: lat,
+          longitude: lng,
+          name: name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+          address: ""
+        }
+      },
+      { headers: headers() }
+    );
+
+  } catch (err) {
+    console.error("❌ Error enviando ubicación:", err.response?.data || err.message);
+  }
+}
+
+
+
 function headers() {
   return {
     Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,

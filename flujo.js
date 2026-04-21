@@ -1,7 +1,10 @@
 // ============================================================
 // flujo.js - Máquina de estados para el chatbot (v2.1 MySQL)
 // ============================================================
-import { enviarTexto, enviarBotones, enviarLista, enviarImagen } from './whatsapp.js';
+import { enviarTexto,enviarUbicacion,enviarUbicacionLugar, enviarBotones, enviarLista, enviarImagen } from './whatsapp.js';
+
+import { buscarCanchas } from './search.js';
+
 import { preguntarIA } from './openai.js';
 import { getMensajePago, getUrlQRYape } from './qr.js';
 import {
@@ -21,8 +24,23 @@ const PRECIO_HORA = 50;
 const DESCUENTO_PAGO = 0.5; // 50% adelanto
 
 // ─── MENÚ PRINCIPAL ──────────────────────────────────────
+
+async function mostrarUbicacion(emisor,answer  = null) {
+  const res = answer ? `Ubicaciones` : 'Ubicación';
+  await enviarBotones(
+  emisor,
+  '⚽ BUSCA GRASSES',
+  `Bienvenido...\n\n📍 *Comparte tu ubicación* para encontrar canchas cercanas.`,
+  [
+    { id: 'SHARE_LOC', title: 'Compartir ubicación' }  // ← Agregar botón
+  ]
+);
+}
+
+
 async function mostrarMenuPrincipal(phone, nombre = null) {
   const saludo = nombre ? `¡Hola, *${nombre}*! 👋` : '¡Hola! 👋';
+  await enviarUbicacion(phone);
   await enviarBotones(
     phone,
     '⚽ GRASS SINTÉTICO PAPA ROQUE',
@@ -150,6 +168,48 @@ export async function procesarMensaje(phone, mensaje, tipo = 'text') {
 
   // ── Comandos globales ────────────────────────────────────
   const norm = normalizar(mensaje);
+
+
+// 🔍 COMANDO UBICACIONES
+if (norm === "ubicaciones") {
+  await mostrarUbicacion(phone);
+  return;
+}
+
+// 🔍 COMANDO GRASS
+if (norm === "futbol") {
+  const conv = await getEstado(phone);
+
+  let lat = conv.datos?.lat;
+  let lng = conv.datos?.lng;
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    lat = -9.93;
+    lng = -76.24;
+  }
+
+  const resultados = await buscarCanchas(lat, lng);
+
+  if (resultados.length === 0) {
+    await enviarTexto(phone, "No encontré canchas 😢");
+    return;
+  }
+
+  await enviarTexto(phone, "⚽ *Canchas Enontradas:*");
+
+  for (let i = 0; i < Math.min(5, resultados.length); i++) {
+    const lugar = resultados[i];
+
+    const nombre = lugar.nombre || `Cancha ${i + 1}`;
+
+    await enviarTexto(phone, `📍 *${nombre}*`);
+    await enviarUbicacionLugar(phone, lugar.lat, lugar.lng);
+  }
+
+  return;
+}
+
+
   if (['menu', 'inicio', 'volver', 'atras', 'salir', 'start'].includes(norm)) {
     await resetEstado(phone);
     await mostrarMenuPrincipal(phone);
@@ -169,52 +229,80 @@ export async function procesarMensaje(phone, mensaje, tipo = 'text') {
   // ── Flujo de reserva ─────────────────────────────────────
   switch (estado) {
 
-    // ── DNI ──────────────────────────────────────────────
-    case 'ESPERANDO_DNI': {
-      const dniLimpio = mensaje.trim().replace(/\s+/g, '');
 
-      if (!esFormatoDNI(dniLimpio)) {
-        await enviarTexto(phone,
-          `❌ Ese DNI no parece válido 😅\n\n` +
-          `Ingresa exactamente *8 dígitos*, sin espacios ni letras.\n` +
-          `Ejemplo: *12345678*\n\nInténtalo de nuevo:`
-        );
-        return;
-      }
 
-      // Indicar que estamos buscando
-      await enviarTexto(phone, `🔍 Buscando tu DNI *${dniLimpio}*... un momento 🙏`);
+// ── DNI - sin reniec(solucion temporal)──────────────────────────────────────────────
+case 'ESPERANDO_DNI': {
+  const dniLimpio = mensaje.trim().replace(/\s+/g, '');
 
-      // Buscar en BD → API (cache-first)
-      const persona = await buscarDNI(dniLimpio);
+  if (!esFormatoDNI(dniLimpio)) {
+    await enviarTexto(phone,
+      `❌ Ese DNI no parece válido 😅\n\n` +
+      `Ingresa exactamente *8 dígitos*, sin espacios ni letras.\n` +
+      `Ejemplo: *12345678*\n\nInténtalo de nuevo:`
+    );
+    return;
+  }
 
-      if (persona) {
-        const origen = persona.fuente === 'bd' ? 'nuestro sistema' : 'RENIEC';
-        await setEstado(phone, 'ESPERANDO_FECHA', {
-          dni: dniLimpio,
-          nombres: persona.nombres,
-          apellidos: persona.apellidos
-        });
-        await enviarTexto(phone,
-          `✅ ¡Te encontré en ${origen}! 😊\n\n` +
-          `👤 *${persona.nombres} ${persona.apellidos}*\n` +
-          `🪪 DNI: ${dniLimpio}\n\n` +
-          `📅 *¿Para qué fecha quieres reservar?*\n\n` +
-          `Puedes escribir:\n` +
-          `• _hoy_ · _mañana_ · _pasado mañana_\n` +
-          `• O la fecha: *DD/MM/AAAA* (ej: 25/03/2026)`
-        );
-      } else {
-        // No encontrado → pedir nombre manual
-        await setEstado(phone, 'ESPERANDO_NOMBRE', { dni: dniLimpio });
-        await enviarTexto(phone,
-          `ℹ️ No encontré tu DNI en nuestros registros.\n\n` +
-          `👤 ¿Cuál es tu *nombre*? (solo nombres, sin apellidos)\n` +
-          `Ejemplo: _Juan Carlos_`
-        );
-      }
-      break;
-    }
+  // ── MODO LOCAL: sin consulta a RENIEC, pedir nombre directo ──
+  await setEstado(phone, 'ESPERANDO_NOMBRE', { dni: dniLimpio });
+  await enviarTexto(phone,
+    `✅ DNI *${dniLimpio}* registrado.\n\n` +
+    `👤 ¿Cuál es tu *nombre*? (solo nombres, sin apellidos)\n` +
+    `Ejemplo: _Juan Carlos_`
+  );
+  break;
+}
+
+
+
+
+    // // ── DNI ──────────────────────────────────────────────
+    // case 'ESPERANDO_DNI': {
+    //   const dniLimpio = mensaje.trim().replace(/\s+/g, '');
+
+    //   if (!esFormatoDNI(dniLimpio)) {
+    //     await enviarTexto(phone,
+    //       `❌ Ese DNI no parece válido 😅\n\n` +
+    //       `Ingresa exactamente *8 dígitos*, sin espacios ni letras.\n` +
+    //       `Ejemplo: *12345678*\n\nInténtalo de nuevo:`
+    //     );
+    //     return;
+    //   }
+
+    //   // Indicar que estamos buscando
+    //   await enviarTexto(phone, `🔍 Buscando tu DNI *${dniLimpio}*... un momento 🙏`);
+
+    //   // Buscar en BD → API (cache-first)
+    //   const persona = await buscarDNI(dniLimpio);
+
+    //   if (persona) {
+    //     const origen = persona.fuente === 'bd' ? 'nuestro sistema' : 'RENIEC';
+    //     await setEstado(phone, 'ESPERANDO_FECHA', {
+    //       dni: dniLimpio,
+    //       nombres: persona.nombres,
+    //       apellidos: persona.apellidos
+    //     });
+    //     await enviarTexto(phone,
+    //       `✅ ¡Te encontré en ${origen}! 😊\n\n` +
+    //       `👤 *${persona.nombres} ${persona.apellidos}*\n` +
+    //       `🪪 DNI: ${dniLimpio}\n\n` +
+    //       `📅 *¿Para qué fecha quieres reservar?*\n\n` +
+    //       `Puedes escribir:\n` +
+    //       `• _hoy_ · _mañana_ · _pasado mañana_\n` +
+    //       `• O la fecha: *DD/MM/AAAA* (ej: 25/03/2026)`
+    //     );
+    //   } else {
+    //     // No encontrado → pedir nombre manual
+    //     await setEstado(phone, 'ESPERANDO_NOMBRE', { dni: dniLimpio });
+    //     await enviarTexto(phone,
+    //       `ℹ️ No encontré tu DNI en nuestros registros.\n\n` +
+    //       `👤 ¿Cuál es tu *nombre*? (solo nombres, sin apellidos)\n` +
+    //       `Ejemplo: _Juan Carlos_`
+    //     );
+    //   }
+    //   break;
+    // }
 
     // ── NOMBRE ──────────────────────────────────────────
     case 'ESPERANDO_NOMBRE': {
@@ -423,6 +511,20 @@ async function agregarHoraYPreguntar(phone, hora, conv) {
 
 // ─── PROCESAR BOTONES ────────────────────────────────────
 async function procesarBoton(phone, buttonId, conv) {
+
+
+    if (buttonId === 'SHARE_LOC') {
+    await enviarTexto(phone,
+      `📍 *Para compartir tu ubicación:*\n\n` +
+      `1️⃣ Abre el menú (⋮ o ⋮⋮)\n` +
+      `2️⃣ Toca 📎 (clip/archivo)\n` +
+      `3️⃣ Selecciona 📍 *Ubicación*\n` +
+      `4️⃣ Elige tu ubicación actual\n\n` +
+      `¡Listo! Te buscaré canchas cercanas. ⚽`
+    );
+    return;
+  }
+
 
   if (buttonId === 'RESERVAR') {
     await mostrarProductos(phone);
