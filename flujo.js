@@ -32,10 +32,10 @@ async function inicioPri(phone, nombre = null) {
     phone,
     '🔥🔥 *QUE SERVICIO DESEAS?* 🔥🔥',
     `\n\n *AQUI TIENES 2 OPCIONES EN BASE A LO QUE NECESITAS*
-    \nELIJA:.`,
+    \nELIJA:`,
     [
-      { id: 'MEN_RES', title: 'RESERVAR' }, 
-      { id: 'ubicaciones', title: 'BUSCAR GRASSES' } 
+      { id: 'MEN_RES', title: '📅 RESERVAR 📅' }, 
+      { id: 'ubicaciones', title: '📍 BUSCAR GRASSES 📍' } 
     ]
   );
 }
@@ -43,10 +43,9 @@ async function inicioPri(phone, nombre = null) {
 
 async function mostrarMenuPrincipal(phone, nombre = null) {
   const saludo = nombre ? `¡Hola, *${nombre}*! 👋` : '¡Hola! 👋';
-  await enviarUbicacion(phone);
   await enviarBotones(
     phone,
-    '⚽ RESERVA DE GRASS SINTÉTICOS',
+    '⚽ RESERVA DE GRASS SINTÉTICO',
     `${saludo} Bienvenido al menu de reserva. 🌿\n\n¿Qué deseas hacer hoy?`,
     [
       { id: 'RESERVAR', title: '📅 Reservar cancha' },
@@ -536,7 +535,7 @@ async function procesarBoton(phone, buttonId, conv) {
       `⚽ BUSCA GRASSES SINTÉTICOS CERCANOS\n\n`+
       `📍 *Comparte tu ubicación* para encontrar canchas cercanas\n\n` +
       `📍 *Para compartir tu ubicación:*\n\n` +
-      `1️⃣ Toca 📎 (clip/archivo)\n` +
+      `1️⃣ Toca 📎 (clip)\n` +
       `2️⃣ Selecciona 📍 *Ubicación*\n` +
       `3️⃣ Elige tu ubicación actual\n` +
       `\n` +
