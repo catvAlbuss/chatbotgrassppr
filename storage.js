@@ -145,6 +145,26 @@ export async function isSlotOcupado(fecha, hora) {
 }
 
 /**
+ * Intenta reservar un slot de forma ATÓMICA (evita race condition).
+ * Retorna true si logró reservarlo, false si ya estaba ocupado.
+ */
+export async function intentarReservarSlot(fecha, hora, reservaId = null) {
+  try {
+    // INSERT IGNORE fallará silenciosamente si ya existe (unique constraint)
+    const resultado = await query(
+      `INSERT IGNORE INTO slots_ocupados (fecha, hora, reserva_id)
+       VALUES (?, ?, ?)`,
+      [fecha, hora, reservaId]
+    );
+    // Si affectedRows > 0, significa que se insertó exitosamente
+    return resultado.affectedRows > 0;
+  } catch (err) {
+    console.error(`❌ intentarReservarSlot error (${fecha} ${hora}):`, err.message);
+    return false;
+  }
+}
+
+/**
  * Marca uno o varios slots como ocupados (al confirmar reserva).
  */
 export async function marcarSlotOcupado(fecha, horas, reservaId = null) {

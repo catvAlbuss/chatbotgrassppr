@@ -22,8 +22,8 @@ export function normalizar(texto) {
 const PALABRAS_SALUDO = [
   // Estándar
   'hola', 'ola', 'hello', 'hi', 'hey', 'holi', 'holaa', 'holaaa', 'holaaaaa',
-  'buenas', 'buenos', 'buen',
-  'buenos dias', 'buenas dias', 'buen dia', 'buenas tardes', 'buenas noches',
+  'buenas', 'buenos', 'buen','que onda', 'q onda', 'que hubo', 'q hubo', 'que hay', 'q hay',
+  'buenos dias', 'buenas dias', 'buen dia', 'buenas tardes', 'buenas noches','disculpe',
   'buen dia', 'buena tarde', 'buena noche',
   // Abreviadas / informales
   'bd', 'bt', 'bn',                   // buenos días / buenas tardes / buenas noches

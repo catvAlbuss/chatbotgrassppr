@@ -122,6 +122,9 @@ export async function enviarImagen(to, imageUrl, caption = '') {
 export async function enviarBotones(to, titulo, cuerpo, botones) {
   // botones: [{ id: 'btn_1', title: 'Opción 1' }]
   try {
+    // WhatsApp NO permite Markdown en header → limpiar asteriscos y formato
+    const tituloLimpio = titulo.replace(/[*_~`]/g, '').trim();
+    
     await axios.post(
       `${BASE_URL}/${process.env.PHONE_NUMBER_ID}/messages`,
       {
@@ -130,7 +133,7 @@ export async function enviarBotones(to, titulo, cuerpo, botones) {
         type: 'interactive',
         interactive: {
           type: 'button',
-          header: { type: 'text', text: titulo },
+          header: { type: 'text', text: tituloLimpio },
           body: { text: cuerpo },
           action: {
             buttons: botones.map(b => ({

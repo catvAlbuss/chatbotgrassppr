@@ -6,7 +6,7 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { procesarMensaje, procesarImagen, procesarComandoAdmin } from './flujo.js';
+import { procesarMensaje, procesarImagen, procesarComandoAdmin, mostrarUbiCercanas } from './flujo.js';
 import { verificarConexionDB, query } from './db.js';
 import { enviarTexto } from './whatsapp.js';
 
@@ -108,6 +108,7 @@ app.post('/webhook', async (req, res) => {
       if (lat && lng) {
         await setEstado(phone, 'MENU_PRINCIPAL', { lat, lng });
         await enviarTexto(phone, `📍 Ubicación guardada: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+        await mostrarUbiCercanas(phone);
       }
     }
 
@@ -149,8 +150,7 @@ async function iniciar() {
 
 
   // ─── REPORTE AUTOMÁTICO DIARIO ────────────────────────────
-  // Funciones de consulta a la BD
-  // ─── FUNCIONES DE CONSULTA BD ────────────────────────────
+
   // async function obtenerReservasHoy() {
   //   return await queryOne(
   //     `SELECT 

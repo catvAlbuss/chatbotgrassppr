@@ -9,7 +9,7 @@ import { preguntarIA } from './openai.js';
 import { getMensajePago, getUrlQRYape } from './qr.js';
 import {
   getEstado, setEstado, resetEstado,
-  getSlotsDisponibles, isSlotOcupado, marcarSlotOcupado,
+  getSlotsDisponibles, isSlotOcupado, intentarReservarSlot, marcarSlotOcupado,
   crearReserva, getReserva, actualizarReserva,
   pagosPendientes, registrarPagoPendiente, eliminarPagoPendiente,
   agregarHistorial
@@ -25,16 +25,19 @@ const DESCUENTO_PAGO = 0.5; // 50% adelanto
 
 // ─── MENÚ PRINCIPAL ──────────────────────────────────────
 
-async function mostrarUbicacion(emisor,answer  = null) {
-  const res = answer ? `Ubicaciones` : 'Ubicación';
+
+async function inicioPri(phone, nombre = null) {
+  const saludo = nombre ? `¡Hola, *${nombre}*! 👋` : '¡Hola! 👋';
   await enviarBotones(
-  emisor,
-  '⚽ BUSCA GRASSES',
-  `Bienvenido...\n\n📍 *Comparte tu ubicación* para encontrar canchas cercanas.`,
-  [
-    { id: 'SHARE_LOC', title: 'Compartir ubicación' }  // ← Agregar botón
-  ]
-);
+    phone,
+    '🔥🔥 *QUE SERVICIO DESEAS?* 🔥🔥',
+    `\n\n *AQUI TIENES 2 OPCIONES EN BASE A LO QUE NECESITAS*
+    \nELIJA:.`,
+    [
+      { id: 'MEN_RES', title: 'RESERVAR' }, 
+      { id: 'ubicaciones', title: 'BUSCAR GRASSES' } 
+    ]
+  );
 }
 
 
@@ -43,8 +46,8 @@ async function mostrarMenuPrincipal(phone, nombre = null) {
   await enviarUbicacion(phone);
   await enviarBotones(
     phone,
-    '⚽ GRASS SINTÉTICO PAPA ROQUE',
-    `${saludo} Bienvenido a tu cancha favorita en Huánuco. 🌿\n\n¿Qué deseas hacer hoy?`,
+    '⚽ RESERVA DE GRASS SINTÉTICOS',
+    `${saludo} Bienvenido al menu de reserva. 🌿\n\n¿Qué deseas hacer hoy?`,
     [
       { id: 'RESERVAR', title: '📅 Reservar cancha' },
       { id: 'VER_DISPONIBLE', title: '🗓️ Ver disponibilidad' },
@@ -68,6 +71,49 @@ async function mostrarProductos(phone) {
     { id: 'TIPO_VOLEY', title: '🏐 Vóley' },
     { id: 'TIPO_EVENTO', title: '🎉 Evento' }
   ]);
+}
+
+// FUNCION QUE ENCUENTRA Y ENVIA LAS UBICACIONES DE LAS CANCHAS CERCANAS
+export async function mostrarUbiCercanas(phone) {
+  const conv = await getEstado(phone);
+
+  let lat = conv.datos?.lat;
+  let lng = conv.datos?.lng;
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    lat = -9.93;
+    lng = -76.24;
+  }
+
+  try {
+    const resultados = await buscarCanchas(lat, lng);
+
+    if (resultados.length === 0) {
+      await enviarTexto(phone, 
+        `❌ No encontré canchas cercanas en este momento.\n\n` +
+        `⏳ Intenta en unos minutos o escribe *MENU* para ver otras opciones.`
+      );
+      return;
+    }
+
+    await enviarTexto(phone, "⚽ *Canchas Cercanas:*");
+
+    for (let i = 0; i < Math.min(10, resultados.length); i++) {
+      const lugar = resultados[i];
+      const nombre = lugar.nombre || `Cancha ${i + 1}`;
+      const distancia = lugar.distancia ? `📍 ${lugar.distancia}m` : '';
+
+      await enviarTexto(phone, `${i + 1}. *${nombre}* ${distancia}`);
+      await enviarUbicacionLugar(phone, lugar.lat, lugar.lng, nombre);
+    }
+  } catch (error) {
+    console.error("Error al buscar canchas:", error);
+    await enviarTexto(phone,
+      `⚠️ Hubo un problema al buscar canchas cercanas.\n\n` +
+      `🔄 *Por favor intenta de nuevo en unos momentos*\n\n` +
+      `Si el problema persiste, escribe *MENU* para ver otras opciones.`
+    );
+  }
 }
 
 // ─── HORAS DISPONIBLES (lista interactiva) ───────────────
@@ -169,50 +215,16 @@ export async function procesarMensaje(phone, mensaje, tipo = 'text') {
   // ── Comandos globales ────────────────────────────────────
   const norm = normalizar(mensaje);
 
-
-// 🔍 COMANDO UBICACIONES
-if (norm === "ubicaciones") {
-  await mostrarUbicacion(phone);
-  return;
-}
-
-// 🔍 COMANDO GRASS
-if (norm === "futbol") {
-  const conv = await getEstado(phone);
-
-  let lat = conv.datos?.lat;
-  let lng = conv.datos?.lng;
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    lat = -9.93;
-    lng = -76.24;
-  }
-
-  const resultados = await buscarCanchas(lat, lng);
-
-  if (resultados.length === 0) {
-    await enviarTexto(phone, "No encontré canchas 😢");
+  // MENU global - funciona en cualquier estado
+  if (['menu', 'inicio', 'volver', 'atras', 'salir', 'start'].includes(norm)) {
+    await resetEstado(phone);
+    await inicioPri(phone);
     return;
   }
 
-  await enviarTexto(phone, "⚽ *Canchas Enontradas:*");
-
-  for (let i = 0; i < Math.min(5, resultados.length); i++) {
-    const lugar = resultados[i];
-
-    const nombre = lugar.nombre || `Cancha ${i + 1}`;
-
-    await enviarTexto(phone, `📍 *${nombre}*`);
-    await enviarUbicacionLugar(phone, lugar.lat, lugar.lng);
-  }
-
-  return;
-}
-
-
-  if (['menu', 'inicio', 'volver', 'atras', 'salir', 'start'].includes(norm)) {
-    await resetEstado(phone);
-    await mostrarMenuPrincipal(phone);
+  // 🔍 COMANDO GRASS (si dice "grasses" o "canchas")
+  if (norm.includes("grass") || norm.includes("cancha")) {
+    await mostrarUbiCercanas(phone);
     return;
   }
 
@@ -220,9 +232,11 @@ if (norm === "futbol") {
   if (estado === 'INICIO' || esSaludo(mensaje)) {
     await setEstado(phone, 'MENU_PRINCIPAL');
     await enviarTexto(phone,
-      `🌿 *¡Bienvenido a Grass Sintético Papa Roque!*\nTu cancha favorita en Huánuco. ⚽`
+      `🌿 *¡Bienvenido!*, Soy un bot que te ayudara en:\n
+      ✅ *Reservar*\n
+      ✅ *Buscar canchas*`
     );
-    await mostrarMenuPrincipal(phone);
+    await inicioPri(phone);
     return;
   }
 
@@ -512,14 +526,20 @@ async function agregarHoraYPreguntar(phone, hora, conv) {
 // ─── PROCESAR BOTONES ────────────────────────────────────
 async function procesarBoton(phone, buttonId, conv) {
 
+    if (buttonId === "MEN_RES") {
+      await mostrarMenuPrincipal(phone);
+      return;
+    }
 
-    if (buttonId === 'SHARE_LOC') {
+    if (buttonId === 'ubicaciones') {
     await enviarTexto(phone,
+      `⚽ BUSCA GRASSES SINTÉTICOS CERCANOS\n\n`+
+      `📍 *Comparte tu ubicación* para encontrar canchas cercanas\n\n` +
       `📍 *Para compartir tu ubicación:*\n\n` +
-      `1️⃣ Abre el menú (⋮ o ⋮⋮)\n` +
-      `2️⃣ Toca 📎 (clip/archivo)\n` +
-      `3️⃣ Selecciona 📍 *Ubicación*\n` +
-      `4️⃣ Elige tu ubicación actual\n\n` +
+      `1️⃣ Toca 📎 (clip/archivo)\n` +
+      `2️⃣ Selecciona 📍 *Ubicación*\n` +
+      `3️⃣ Elige tu ubicación actual\n` +
+      `\n` +
       `¡Listo! Te buscaré canchas cercanas. ⚽`
     );
     return;
@@ -567,7 +587,11 @@ async function procesarBoton(phone, buttonId, conv) {
 
   // ── Hora seleccionada desde la lista ───────────────────
   if (buttonId.startsWith('HORA_')) {
-    const hora = buttonId.replace('HORA_', '').replace(/(\d{2})(\d{2})/, '$1:$2');
+    // Convertir HORA_0700 → 07:00, HORA_1430 → 14:30
+    const horaNum = buttonId.replace('HORA_', '');
+    const hora = horaNum.length === 4 
+      ? `${horaNum.substring(0, 2)}:${horaNum.substring(2)}` 
+      : horaNum;
     const pagActual = conv.datos.paginaHoras || 'manana';
     const horasElegidas = conv.datos.horasElegidas || [];
 
@@ -729,7 +753,25 @@ async function _aprobarReserva(adminPhone, reservaId) {
   }
   await eliminarPagoPendiente(reservaId);
   await actualizarReserva(reservaId, { estado: 'CONFIRMADA' });
-  await marcarSlotOcupado(reserva.fecha, reserva.horasElegidas || reserva.horas, reservaId);
+  
+  // Intentar reservar slots de forma ATÓMICA (evita race condition)
+  const horas = reserva.horasElegidas || reserva.horas;
+  const todasReservadas = await Promise.all(
+    horas.map(hora => intentarReservarSlot(reserva.fecha, hora, reservaId))
+  );
+  
+  if (!todasReservadas.every(r => r)) {
+    // Alguna hora ya fue tomada por otro usuario
+    await actualizarReserva(reservaId, { estado: 'CANCELADA_SLOTS_OCUPADOS' });
+    await enviarTexto(reserva.phone,
+      `❌ *Lo sentimos, no pudimos confirmar.*\n\n` +
+      `Algunas de tus horas fueron reservadas por otro usuario justo en este momento.\n\n` +
+      `*Por favor tu dinero será reembolsado automáticamente.*\n\n` +
+      `Escribe *MENU* para intentar con otras horas. 😊`
+    );
+    return;
+  }
+  
   await resetEstado(adminPhone);
 
   await enviarTexto(reserva.phone,
@@ -810,7 +852,26 @@ export async function procesarComandoAdmin(phone, mensaje) {
     }
     await eliminarPagoPendiente(reservaId);
     await actualizarReserva(reservaId, { estado: 'CONFIRMADA' });
-    await marcarSlotOcupado(reserva.fecha, reserva.horasElegidas || reserva.horas, reservaId);
+    
+    // Intentar reservar slots de forma ATÓMICA (evita race condition)
+    const horas = reserva.horasElegidas || reserva.horas;
+    const todasReservadas = await Promise.all(
+      horas.map(hora => intentarReservarSlot(reserva.fecha, hora, reservaId))
+    );
+    
+    if (!todasReservadas.every(r => r)) {
+      // Alguna hora ya fue tomada por otro usuario
+      await actualizarReserva(reservaId, { estado: 'CANCELADA_SLOTS_OCUPADOS' });
+      await enviarTexto(phone, `⚠️  Reserva *${reservaId}*: Algunas horas ya fueron ocupadas. CANCELADA.`);
+      await enviarTexto(reserva.phone,
+        `❌ *Lo sentimos, no pudimos confirmar.*\n\n` +
+        `Algunas de tus horas fueron reservadas por otro usuario.\n\n` +
+        `*Tu dinero será reembolsado automáticamente.*\n\n` +
+        `Escribe *MENU* para intentar con otras horas. 😊`
+      );
+      return true;
+    }
+    
     await enviarTexto(phone, `✅ Reserva *${reservaId}* APROBADA.`);
     await enviarTexto(reserva.phone,
       `🎉 *¡RESERVA CONFIRMADA!*\n\n✅ Pago verificado.\n\n` +
