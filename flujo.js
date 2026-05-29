@@ -1,7 +1,7 @@
 // ============================================================
 // flujo.js - Máquina de estados para el chatbot (v2.1 MySQL)
 // ============================================================
-import { enviarTexto,enviarUbicacion,enviarUbicacionLugar, enviarBotones, enviarLista, enviarImagen } from './whatsapp.js';
+import { enviarTexto,enviarUbicacion,enviarUbicacionLugar, enviarBotones, enviarLista, enviarImagen, agregarAColaMensajes } from './whatsapp.js';
 
 import { buscarCanchas } from './search.js';
 
@@ -88,30 +88,31 @@ export async function mostrarUbiCercanas(phone) {
     const resultados = await buscarCanchas(lat, lng);
 
     if (resultados.length === 0) {
-      await enviarTexto(phone, 
+      agregarAColaMensajes(phone, () => enviarTexto(phone, 
         `❌ No encontré canchas cercanas en este momento.\n\n` +
         `⏳ Intenta en unos minutos o escribe *MENU* para ver otras opciones.`
-      );
+      ));
       return;
     }
 
-    await enviarTexto(phone, "⚽ *Canchas Cercanas:*");
+    agregarAColaMensajes(phone, () => enviarTexto(phone, "⚽ *Canchas Cercanas:*"));
 
     for (let i = 0; i < Math.min(10, resultados.length); i++) {
       const lugar = resultados[i];
       const nombre = lugar.nombre || `Cancha ${i + 1}`;
       const distancia = lugar.distancia ? `📍 ${lugar.distancia}m` : '';
 
-      await enviarTexto(phone, `${i + 1}. *${nombre}* ${distancia}`);
-      await enviarUbicacionLugar(phone, lugar.lat, lugar.lng, nombre);
+      // Agregar a la cola sin await - la cola procesará con delays
+      agregarAColaMensajes(phone, () => enviarTexto(phone, `${i + 1}. *${nombre}* ${distancia}`));
+      agregarAColaMensajes(phone, () => enviarUbicacionLugar(phone, lugar.lat, lugar.lng, nombre));
     }
   } catch (error) {
     console.error("Error al buscar canchas:", error);
-    await enviarTexto(phone,
+    agregarAColaMensajes(phone, () => enviarTexto(phone,
       `⚠️ Hubo un problema al buscar canchas cercanas.\n\n` +
       `🔄 *Por favor intenta de nuevo en unos momentos*\n\n` +
       `Si el problema persiste, escribe *MENU* para ver otras opciones.`
-    );
+    ));
   }
 }
 

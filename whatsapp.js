@@ -5,6 +5,55 @@ import axios from 'axios';
 
 const BASE_URL = 'https://graph.facebook.com/v18.0';
 
+// ─── SISTEMA DE THROTTLING PARA EVITAR RATE LIMIT ────────
+const messageQueues = new Map(); // { phone: { queue: [], processing: boolean } }
+const DELAY_ENTRE_MENSAJES = 800; // ms entre mensajes (ajusta según necesites)
+
+// Helper: esperar antes de enviar siguiente mensaje
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Procesar cola de mensajes para un usuario
+async function procesarColaMensajes(phone) {
+  if (!messageQueues.has(phone)) return;
+  
+  const cola = messageQueues.get(phone);
+  if (cola.processing || cola.queue.length === 0) return;
+  
+  cola.processing = true;
+  
+  while (cola.queue.length > 0) {
+    const { fn } = cola.queue.shift();
+    try {
+      await fn();
+      if (cola.queue.length > 0) {
+        await delay(DELAY_ENTRE_MENSAJES);
+      }
+    } catch (error) {
+      console.error('Error procesando cola de mensajes:', error);
+    }
+  }
+  
+  cola.processing = false;
+  messageQueues.delete(phone); // limpiar cuando termina
+}
+
+// Agregar mensaje a la cola
+function agregarAColaMensajes(phone, fn) {
+  if (!messageQueues.has(phone)) {
+    messageQueues.set(phone, { queue: [], processing: false });
+  }
+  
+  const cola = messageQueues.get(phone);
+  cola.queue.push({ fn });
+  
+  // Iniciar procesamiento si no está activo
+  if (!cola.processing) {
+    procesarColaMensajes(phone);
+  }
+}
+
 
 export async function enviarUbicacion(to) {
   try {
@@ -186,3 +235,6 @@ export async function enviarLista(to, titulo, cuerpo, botonTexto, secciones) {
     }
   }
 }
+
+// ─── EXPORTAR FUNCIÓN DE COLA ──────────────────────────
+export { agregarAColaMensajes };
