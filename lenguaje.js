@@ -22,34 +22,37 @@ export function normalizar(texto) {
 const PALABRAS_SALUDO = [
   // Estándar
   'hola', 'ola', 'hello', 'hi', 'hey', 'holi', 'holaa', 'holaaa', 'holaaaaa',
-  'buenas', 'buenos', 'buen',
-  'buenos dias', 'buenas dias', 'buen dia', 'buenas tardes', 'buenas noches',
-  'buen dia', 'buena tarde', 'buena noche',
+  'buenas', 'buenos', 'q', 'buen','qlq','q ceuntas','hay canchas?','hay','que onda', 'q onda', 'que hubo', 'q hubo', 'que hay', 'q hay',
+  'buenos dias', 'buenas dias', 'buen dia', 'buenas tardes', 'buenas noches','disculpe',
+  'buen dia', 'buena tarde', 'buena noche', 'buenastardes', 'buenasnoches',
   // Abreviadas / informales
   'bd', 'bt', 'bn',                   // buenos días / buenas tardes / buenas noches
-  'bdia', 'btardes', 'bnoches',
+  'bdia', 'btardes', 'bnoches', 'bdiass', 'btardess',
   // Peruanismos / jerga
-  'cho', 'choo', 'oye', 'oe', 'oee',
-  'causa', 'caus',                    // "causa" = amigo en Perú
-  'brother', 'bro',
-  'acá', 'aca',
-  'pe', 'pue',                        // "pues" informal
+  'cho', 'choo', 'oie', 'oye', 'oe', 'oee', 'oyee', 'oyee hermano',
+  'causa', 'caus', 'causita',         // "causa" = amigo en Perú
+  'brother', 'bro', 'hermano', 'compa', 'compadre',
+  'acá', 'aca', 'aqui', 'aquí',
+  'pe', 'pue', 'pues',                // "pues" informal
+  'oe', 'eeo', 'eyo', 'eeyo',
+  'che', 'ché', 'mira', 'miraa',
   // Frases de saludo
-  'que tal', 'q tal', 'k tal',
-  'como estas', 'como estan', 'como esta',
-  'como te va', 'como te esta yendo',
-  'que hay', 'q hay', 'que hubo', 'q hubo', 'que fue',
-  'que pasa', 'q pasa', 'que paso', 'q paso',
-  'epale', 'epa', 'ey', 'eeeh', 'eeh',
-  'que onda', 'q onda',
-  'saludos', 'saludo',
-  'good morning', 'good afternoon', 'good evening',
+  'que tal', 'q tal', 'k tal', 'q onda', 'q onda hermano',
+  'como estas', 'como estan', 'como esta', 'comoestas', 'comoestaas',
+  'como te va', 'como te esta yendo', 'como te iba',
+  'que hay', 'q hay', 'que hubo', 'q hubo', 'que fue', 'q fue',
+  'que pasa', 'q pasa', 'que paso', 'q paso', 'quepasa', 'quepasoo',
+  'epale', 'epa', 'ey', 'eeeh', 'eeh', 'eyyyye',
+  'que onda', 'q onda', 'q ondita',
+  'saludos', 'saludo', 'saludosss', 'un saludo',
+  'good morning', 'good afternoon', 'good evening', 'goodmorning',
   // Intenciones claras de empezar
-  'inicio', 'menu', 'start', 'empezar', 'comenzar',
+  'inicio', 'menu', 'start', 'empezar', 'comenzar', 'start aqui',
   'reservar', 'quiero reservar', 'hacer reserva', 'hacer una reserva',
   'necesito reservar', 'necesito una cancha', 'quiero una cancha',
-  'disponible', 'disponibles',
-  'info', 'informacion', 'informes',
+  'disponible', 'disponibles', 'tienes cancha', 'hay cancha',
+  'info', 'informacion', 'informes', 'informa', 'informar',
+  'ayuda', 'ayudame', 'necesito ayuda', 'me ayudas',
 ];
 
 export function esSaludo(mensaje) {
@@ -232,19 +235,26 @@ export function extraerHoraDeTexto(texto) {
 
 // ─── CONFIRMACIONES SÍ/NO ─────────────────────────────────
 const PALABRAS_SI = [
-  'si', 's', 'sí', 'yes', 'ya', 'dale', 'ok', 'okay', 'okey', 'okai',
-  'claro', 'claro que si', 'por supuesto', 'desde luego',
-  'afirmativo', 'correcto', 'exacto', 'exactamente',
-  'confirmar', 'confirmo', 'confirma', 'quiero', 'acepto',
-  'va', 'va pe', 'vape', 'ya pe', 'listo', 'hecho', 'ya esta',
-  'eso', 'de una', 'de un'                   // peruanismos: "de una" = sí
+  'si', 's', 'sí', 'yes', 'ya', 'dale', 'ok', 'okay', 'okey', 'okai', 'kk',
+  'claro', 'claro que si', 'claro que sí', 'por supuesto', 'desde luego', 'obvio',
+  'afirmativo', 'correcto', 'exacto', 'exactamente', 'exaacto',
+  'confirmar', 'confirmo', 'confirma', 'quiero', 'acepto', 'acepta', 'aceptar',
+  'va', 'va pe', 'vape', 'ya pe', 'listo', 'hecho', 'ya esta', 'ya está', 'está bien',
+  'eso', 'de una', 'de un', 'vamo', 'vamos', 'anda', 'andas',
+  'perfecto', 'bueno', 'sale', 'dale pues', 'ta bien', 'okey dokey',
+  'siiiii', 'siiii', 'syy', 'tal cual', 'totalmente', 'def', 'defintv',
+  'en orden', 'estamos bien', 'esta ok', 'ta ok', 'ok ok ok'
 ];
 
 const PALABRAS_NO = [
-  'no', 'n', 'nope', 'nel', 'nah', 'na', 'naa',
-  'cancelar', 'cancela', 'cancelo', 'cancel',
-  'salir', 'volver', 'atras', 'atraz',
-  'para', 'para ya', 'olvidar', 'olvida'
+  'no', 'n', 'nope', 'nel', 'nah', 'na', 'naa', 'non', 'noo', 'noooo',
+  'cancelar', 'cancela', 'cancelo', 'cancel', 'cancele', 'cancelemos',
+  'salir', 'volver', 'atras', 'atraz', 'atrás', 'pa atras', 'pal atras',
+  'para', 'para ya', 'olvidar', 'olvida', 'olvidalo', 'olvídalo',
+  'no gracias', 'nogaras', 'nomas', 'no mas', 'nunca', 'jamas', 'jamás',
+  'depois', 'después', 'mañana', 'en otro momento', 'otro dia', 'otro momento',
+  'no es', 'no quiero', 'no necesito', 'no puedo', 'no tengo', 'no hay',
+  'falso', 'falso negativo', 'para nada', 'ni modo', 'ni hablar'
 ];
 
 export function esConfirmacionSi(texto) {
@@ -255,4 +265,140 @@ export function esConfirmacionSi(texto) {
 export function esConfirmacionNo(texto) {
   const norm = normalizar(texto);
   return PALABRAS_NO.some(n => norm === normalizar(n));
+}
+
+// ─── PALABRAS PARA RESERVAS ──────────────────────────────
+const PALABRAS_RESERVA = [
+  'reserva', 'reservar', 'reservacion', 'reservación', 'reservame', 'resérvame',
+  'quiero', 'necesito', 'dame', 'dame una', 'dame una cancha', 'dame cancha',
+  'booking', 'book', 'agendar', 'agenda', 'agende', 'agendarme',
+  'separar', 'separa', 'separame', 'separeme', 'aparta', 'apartame',
+  'apartar', 'apartar cancha', 'apartar pista', 'apartar una hora',
+  'pedir', 'pideme', 'pídeme', 'solicitar', 'solicita',
+  'ocupar', 'ocupame', 'ocupo', 'ocupar cancha', 'ocupar pista',
+  'usa', 'usar', 'usaremos', 'usare', 'usaré',
+  'alquilar', 'alquila', 'alquilame', 'alquílame', 'rental', 'rent'
+];
+
+// ─── PALABRAS PARA CANCHAS/GRASS ─────────────────────────
+const PALABRAS_CANCHA = [
+  'cancha', 'canchas', 'pista', 'pistas', 'cancha de grass', 'pista de grass',
+  'grass', 'grass sintetico', 'grass sintético', 'cesped', 'césped', 'pasto',
+  'campo', 'campos', 'cancha de futbol', 'cancha de futsal', 'cancha de futsal',
+  'losa', 'losas', 'cancha techada', 'cancha cubierta', 'cancha abierta',
+  'sintético', 'sintetico', 'artificial', 'profesional', 'profesional sintético',
+  'para jugar', 'para entrenar', 'para competir', 'para futsal', 'para futbol',
+  '5v5', '6v6', '7v7', '8v8', 'cinco contra cinco', 'seis contra seis'
+];
+
+// ─── PALABRAS PARA UBICACIÓN/BÚSQUEDA ─────────────────────
+const PALABRAS_UBICACION = [
+  'donde', 'dónde', 'ubicacion', 'ubicación', 'localización', 'donde quedan',
+  'donde estan', 'dónde están', 'direccion', 'dirección', 'ubicada',
+  'cerca', 'cercana', 'cerca de', 'cercano', 'cercano a',
+  'distancia', 'lejos', 'muy lejos', 'a cuanta distancia',
+  'buscar', 'busca', 'buscame', 'búscame', 'buscar una', 'buscar cancha',
+  'encontrar', 'encuentra', 'encontrameuna', 'encuéntrame',
+  'cual hay', 'cuál hay', 'que hay', 'qué hay', 'listar', 'lista',
+  'cuales hay', 'cuáles hay', 'opciones', 'alternativas', 'opciones disponibles',
+  'mostrar', 'muestra', 'mostrameuna', 'muéstrame', 'enseña',
+  'mapa', 'mapas', 'ubicar en mapa', 'zona', 'zonas'
+];
+
+// ─── PALABRAS PARA HORARIOS/HORAS ────────────────────────
+const PALABRAS_HORA = [
+  'hora', 'horas', 'horario', 'horarios', 'a que hora', 'a qué hora',
+  'a las', 'de la', 'de las', 'por la', 'por las',
+  'mañana', 'manana', 'tarde', 'noche', 'madrugada',
+  'temprano', 'tarde', 'noche', 'mediodia', 'mediodía',
+  'disponible', 'disponibles', 'vacante', 'vacantes', 'libre', 'libres',
+  'ocupado', 'ocupada', 'ocupados', 'ocupadas', 'reservado',
+  'abierto', 'cerrado', 'habilitado', 'deshabilitado',
+  'cuantas horas', 'cuántas horas', 'cuantos minutos', 'cuántos minutos',
+  'duracion', 'duración', 'tiempo', 'cuanto tiempo', 'cuánto tiempo',
+  'una hora', 'dos horas', 'media hora', '30 minutos', '60 minutos', 'hora y media'
+];
+
+// ─── PALABRAS PARA PRECIO/PAGO ──────────────────────────
+const PALABRAS_PRECIO = [
+  'precio', 'precios', 'costo', 'costos', 'tarifa', 'tarifas', 'cuanto cuesta',
+  'cuánto cuesta', 'cuesta', 'cuesta', 'cuanto vale', 'cuánto vale', 'vale',
+  'soles', 'soles peruanos', 'pesos', 'dolares', 'dólares',
+  'pagar', 'pagame', 'págame', 'pago', 'pagos', 'factura',
+  'adelanto', 'deposito', 'depósito', 'transferencia', 'transferir',
+  'metodo pago', 'método pago', 'como pago', 'cómo pago',
+  'efectivo', 'tarjeta', 'tarjeta credito', 'tarjeta de crédito',
+  'yape', 'plin', 'billetera', 'billetera digital', 'transferencia bancaria',
+  'descuento', 'descuentos', 'oferta', 'ofertas', 'promocion', 'promoción',
+  'gratis', 'promocional', 'rebaja', 'rebajas', 'oferton'
+];
+
+// ─── PALABRAS PARA CONFIRMACIÓN DE DATOS ────────────────
+const PALABRAS_DATOS = [
+  'nombre', 'nombres', 'nombre completo', 'como te llamas',
+  'cómo te llamas', 'cual es tu nombre', 'cuál es tu nombre',
+  'telefono', 'teléfono', 'celular', 'numero', 'número', 'telefono celular',
+  'dni', 'documento', 'documento de identidad', 'cedula', 'cédula',
+  'correo', 'email', 'correo electronico', 'correo electrónico',
+  'verificar', 'confirmar', 'data', 'datos', 'informacion personal', 'información personal',
+  'correcto', 'correcto así es', 'si asi es', 'sí así es', 'es correcto'
+];
+
+// ─── PALABRAS PARA AYUDA/SOPORTE ────────────────────────
+const PALABRAS_AYUDA = [
+  'ayuda', 'ayudame', 'ayúdame', 'me ayudas', 'necesito ayuda',
+  'no entiendo', 'no entendi', 'que no entiendo', 'como', 'cómo',
+  'problema', 'problemas', 'error', 'errores', 'no funciona', 'no me funciona',
+  'no funciono', 'falla', 'fallo', 'algo falla', 'algo no funciona',
+  'soporte', 'soporta', 'comunicar', 'contactar', 'contacto',
+  'quejas', 'queja', 'reclamo', 'reclamos', 'reclamacion', 'reclamación',
+  'volver', 'volver al menu', 'vuelve', 'atras', 'atrás', 'para atras',
+  'opcion', 'opción', 'cual es la opcion', 'cuál es la opción',
+  'ejemplo', 'ejemplos', 'me puedes', 'me puedes dar un ejemplo',
+  'como se hace', 'cómo se hace', 'paso a paso', 'pasos'
+];
+
+// ─── PALABRA PARA VERIFICAR SI ES BÚSQUEDA DE RESERVA ─────
+export function esReserva(mensaje) {
+  const norm = normalizar(mensaje);
+  return PALABRAS_RESERVA.some(s => {
+    const sNorm = normalizar(s);
+    return norm.includes(sNorm);
+  });
+}
+
+// ─── PALABRA PARA VERIFICAR SI BUSCA CANCHA ────────────────
+export function esBuscaCancha(mensaje) {
+  const norm = normalizar(mensaje);
+  return PALABRAS_CANCHA.some(s => {
+    const sNorm = normalizar(s);
+    return norm.includes(sNorm);
+  });
+}
+
+// ─── PALABRA PARA VERIFICAR SI BUSCA UBICACIÓN ─────────────
+export function esBuscaUbicacion(mensaje) {
+  const norm = normalizar(mensaje);
+  return PALABRAS_UBICACION.some(s => {
+    const sNorm = normalizar(s);
+    return norm.includes(sNorm);
+  });
+}
+
+// ─── PALABRA PARA VERIFICAR SI PREGUNTA POR HORARIO ────────
+export function esPreguntaHorario(mensaje) {
+  const norm = normalizar(mensaje);
+  return PALABRAS_HORA.some(s => {
+    const sNorm = normalizar(s);
+    return norm.includes(sNorm);
+  });
+}
+
+// ─── PALABRA PARA VERIFICAR SI PREGUNTA POR PRECIO ─────────
+export function esPreguntaPrecio(mensaje) {
+  const norm = normalizar(mensaje);
+  return PALABRAS_PRECIO.some(s => {
+    const sNorm = normalizar(s);
+    return norm.includes(sNorm);
+  });
 }
