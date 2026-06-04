@@ -4,11 +4,42 @@
 // ============================================================
 import 'dotenv/config';
 import express from 'express';
+import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { procesarMensaje, procesarImagen, procesarComandoAdmin, mostrarUbiCercanas } from './flujo.js';
-import { verificarConexionDB, query } from './db.js';
+import { verificarConexionDB, query, queryOne } from './db.js';
 import { enviarTexto } from './whatsapp.js';
+import { getEstado, setEstado } from './storage.js';
+import apiRouter from './api.js';
+
+// ─── CONTEXTO POR DEFECTO (fallback al .env del bot original) ─
+const CTX_DEFAULT = {
+  botId:         'default',
+  config:        {},
+  token:         null,   // null → whatsapp.js usa process.env.WHATSAPP_TOKEN
+  phoneNumberId: null,   // null → whatsapp.js usa process.env.PHONE_NUMBER_ID
+};
+
+async function resolverCtx(phoneNumberId) {
+  if (!phoneNumberId) return CTX_DEFAULT;
+  try {
+    const bot = await queryOne(
+      'SELECT id, config, waba_token, phone_number_id FROM bots WHERE phone_number_id = ? AND activo = 1',
+      [phoneNumberId]
+    );
+    if (!bot) return CTX_DEFAULT;
+    return {
+      botId:         bot.id,
+      config:        typeof bot.config === 'string' ? JSON.parse(bot.config) : (bot.config || {}),
+      token:         bot.waba_token || null,
+      phoneNumberId: bot.phone_number_id,
+    };
+  } catch (err) {
+    console.error('❌ resolverCtx error:', err.message);
+    return CTX_DEFAULT;
+  }
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -17,22 +48,39 @@ const app = express();
 // En Hostinger Node.js: el puerto puede ser 3000 o el que asigna el panel
 const PORT = process.env.PORT || 3000;
 
+app.use(cors());
 app.use(express.json());
 
-// ─── SERVIR ARCHIVOS ESTÁTICOS (QR Yape) ─────────────────
-app.use('/qrs', express.static(path.join(__dirname, 'qrs')));
+// ─── DASHBOARD API ────────────────────────────────────────
+app.use('/api', apiRouter);
 
-// ─── HEALTHCHECK — Hostinger lo usa para validar que el app está vivo ─
-app.get('/', (req, res) => {
-  res.status(200).json({
-    status: 'ok',
-    bot: 'Grass Sintético Chatbot v2.1',
-    uptime: Math.floor(process.uptime()),
-    ts: new Date().toISOString()
+// ─── DASHBOARD UI (SPA) ───────────────────────────────────
+const dashboardDist = path.join(__dirname, 'public', 'admin');
+app.use('/admin', express.static(dashboardDist));
+app.get('/admin/*', (req, res) => {
+  const indexPath = path.join(dashboardDist, 'index.html');
+  res.sendFile(indexPath, err => {
+    if (err) res.status(404).send('Dashboard no disponible. Ejecuta: cd dashboard && npm run build');
   });
 });
 
+// ─── SERVIR ARCHIVOS ESTÁTICOS ───────────────────────────
+app.use('/qrs',    express.static(path.join(__dirname, 'qrs')));
+app.use('/public', express.static(path.join(__dirname, 'public')));
+
+// ─── LANDING PAGE PÚBLICA (sin login) ────────────────────
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'), err => {
+    if (err) res.status(200).json({ status: 'ok', bot: 'gespro-asist v2.2', uptime: Math.floor(process.uptime()) });
+  });
+});
+
+// ─── HEALTHCHECK ─────────────────────────────────────────
 app.get('/health', (req, res) => res.status(200).send('OK'));
+app.get('/status', (req, res) => res.status(200).json({
+  status: 'ok', bot: 'gespro-asist v2.2',
+  uptime: Math.floor(process.uptime()), ts: new Date().toISOString()
+}));
 
 // ─── VERIFICACIÓN DEL WEBHOOK (Meta) ─────────────────────
 app.get('/webhook', (req, res) => {
@@ -57,19 +105,24 @@ app.post('/webhook', async (req, res) => {
     const body = req.body;
     if (body.object !== 'whatsapp_business_account') return;
 
-    const messages = body.entry?.[0]?.changes?.[0]?.value?.messages;
+    const value    = body.entry?.[0]?.changes?.[0]?.value;
+    const messages = value?.messages;
     if (!messages?.length) return;
 
-    const msg = messages[0];
+    // ── Identificar qué bot debe atender este mensaje ────
+    const phoneNumberId = value?.metadata?.phone_number_id;
+    const ctx = await resolverCtx(phoneNumberId);
+
+    const msg   = messages[0];
     const phone = msg.from;
 
-    console.log(`\n📩 [${new Date().toLocaleTimeString()}] ${phone} tipo=${msg.type}`);
+    console.log(`\n📩 [${new Date().toLocaleTimeString()}] bot=${ctx.botId} ${phone} tipo=${msg.type}`);
 
     // ── Texto ─────────────────────────────────────────────
     if (msg.type === 'text') {
       const texto = msg.text.body;
-      const esAdmin = await procesarComandoAdmin(phone, texto);
-      if (!esAdmin) await procesarMensaje(phone, texto, 'text');
+      const esAdmin = await procesarComandoAdmin(phone, texto, ctx);
+      if (!esAdmin) await procesarMensaje(phone, texto, 'text', ctx);
     }
 
     // ── Interactivo (botón / lista) ───────────────────────
@@ -77,49 +130,45 @@ app.post('/webhook', async (req, res) => {
       const buttonId =
         msg.interactive?.button_reply?.id ||
         msg.interactive?.list_reply?.id;
-      if (buttonId) await procesarMensaje(phone, buttonId, 'interactive');
+      if (buttonId) await procesarMensaje(phone, buttonId, 'interactive', ctx);
     }
 
     // ── Imagen (comprobante de pago) ──────────────────────
     else if (msg.type === 'image') {
-      await procesarImagen(phone, msg.image?.id);
+      await procesarImagen(phone, msg.image?.id, ctx);
     }
 
     // ── Audio / video / doc → pedir foto ────────────────
     else if (['audio', 'video', 'document', 'sticker'].includes(msg.type)) {
-      const { getEstado } = await import('./storage.js');
-      const { enviarTexto } = await import('./whatsapp.js');
-      const conv = await getEstado(phone);
+      const conv = await getEstado(phone, ctx.botId);
       if (['ESPERANDO_COMPROBANTE', 'PAGO_EN_REVISION'].includes(conv.estado)) {
         await enviarTexto(phone,
-          `📎 Recibimos un archivo. Para el comprobante envíalo como *imagen* (foto). 📸`
+          `📎 Recibimos un archivo. Para el comprobante envíalo como *imagen* (foto). 📸`,
+          ctx
         );
       } else {
-        await procesarMensaje(phone, 'hola', 'text');
+        await procesarMensaje(phone, 'hola', 'text', ctx);
       }
     }
 
     // ── Ubicación compartida por el usuario ────────────
     else if (msg.type === 'location') {
-      const { setEstado } = await import('./storage.js');
       const lat = msg.location?.latitude;
       const lng = msg.location?.longitude;
-      
       if (lat && lng) {
-        await setEstado(phone, 'MENU_PRINCIPAL', { lat, lng });
-        await enviarTexto(phone, `📍 Ubicación guardada: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-        await mostrarUbiCercanas(phone);
+        await setEstado(phone, 'MENU_PRINCIPAL', { lat, lng }, ctx.botId);
+        await enviarTexto(phone, `📍 Ubicación guardada: ${lat.toFixed(4)}, ${lng.toFixed(4)}`, ctx);
+        await mostrarUbiCercanas(phone, ctx);
       }
     }
 
     // ── Cualquier otro → menú ─────────────────────────────
     else {
-      await procesarMensaje(phone, 'hola', 'text');
+      await procesarMensaje(phone, 'hola', 'text', ctx);
     }
 
   } catch (err) {
     console.error('❌ Error en webhook:', err.message);
-    // NO relanzar — el 200 ya fue enviado, no queremos que Meta reintente
   }
 });
 
@@ -137,7 +186,7 @@ async function iniciar() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`
   ╔══════════════════════════════════════════╗
-  ║   🌿 GRASS SINTÉTICO CHATBOT v2.1 🌿    ║
+  ║          GESPRO ASIST v2.1              ║
   ║   Puerto: ${PORT}  |  DB: ${dbOk ? '✅ OK' : '❌ SIN BD'}         ║
   ╚══════════════════════════════════════════╝
 

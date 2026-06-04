@@ -1,10 +1,12 @@
 // ============================================================
-// flujo.js - Máquina de estados para el chatbot (v2.1 MySQL)
+// flujo.js - Máquina de estados para el chatbot (v2.2 multi-tenant)
+// Recibe ctx = { botId, config, token, phoneNumberId }
 // ============================================================
-import { enviarTexto,enviarUbicacion,enviarUbicacionLugar, enviarBotones, enviarLista, enviarImagen, agregarAColaMensajes } from './whatsapp.js';
-
+import {
+  enviarTexto, enviarUbicacion, enviarUbicacionLugar,
+  enviarBotones, enviarLista, enviarImagen, agregarAColaMensajes
+} from './whatsapp.js';
 import { buscarCanchas } from './search.js';
-
 import { preguntarIA } from './openai.js';
 import { getMensajePago, getUrlQRYape } from './qr.js';
 import {
@@ -20,13 +22,15 @@ import {
   nombreFecha, esFormatoDNI, extraerHoraDeTexto, normalizar
 } from './lenguaje.js';
 
-const PRECIO_HORA = 50;
-const DESCUENTO_PAGO = 0.5; // 50% adelanto
+// ─── HELPERS DE CONTEXTO ─────────────────────────────────
+// Lee valores de la config del bot con fallback a los defaults originales
+function cfg(ctx, key, fallback) {
+  return ctx?.config?.[key] ?? fallback;
+}
 
 // ─── MENÚ PRINCIPAL ──────────────────────────────────────
 
-
-async function inicioPri(phone, nombre = null) {
+async function inicioPri(phone, ctx, nombre = null) {
   const saludo = nombre ? `¡Hola, *${nombre}*! 👋` : '¡Hola! 👋';
   await enviarBotones(
     phone,
@@ -34,478 +38,327 @@ async function inicioPri(phone, nombre = null) {
     `\n\n *AQUI TIENES 2 OPCIONES EN BASE A LO QUE NECESITAS*
     \nELIJA:`,
     [
-      { id: 'MEN_RES', title: '📅 RESERVAR 📅' }, 
-      { id: 'ubicaciones', title: '📍 BUSCAR GRASSES 📍' } 
-    ]
+      { id: 'MEN_RES',    title: '📅 RESERVAR 📅' },
+      { id: 'ubicaciones', title: '📍 BUSCAR GRASSES 📍' }
+    ],
+    ctx
   );
 }
 
-
-async function mostrarMenuPrincipal(phone, nombre = null) {
+async function mostrarMenuPrincipal(phone, ctx, nombre = null) {
   const saludo = nombre ? `¡Hola, *${nombre}*! 👋` : '¡Hola! 👋';
+  const botNombre = cfg(ctx, 'bot_nombre', 'Reserva de Grass Sintético');
   await enviarBotones(
     phone,
-    '⚽ RESERVA DE GRASS SINTÉTICO',
+    `⚽ ${botNombre}`,
     `${saludo} Bienvenido al menu de reserva. 🌿\n\n¿Qué deseas hacer hoy?`,
     [
-      { id: 'RESERVAR', title: '📅 Reservar cancha' },
+      { id: 'RESERVAR',       title: '📅 Reservar cancha' },
       { id: 'VER_DISPONIBLE', title: '🗓️ Ver disponibilidad' },
-      { id: 'CONSULTAR', title: '❓ Consultar info' }
-    ]
+      { id: 'CONSULTAR',      title: '❓ Consultar info' }
+    ],
+    ctx
   );
 }
 
 // ─── MENÚ TIPO DE CANCHA ─────────────────────────────────
-async function mostrarProductos(phone) {
+async function mostrarProductos(phone, ctx) {
+  const precio       = cfg(ctx, 'precio_hora', 50);
+  const descuento    = cfg(ctx, 'descuento_pago', 0.5);
+  const canchas      = cfg(ctx, 'canchas', ['⚽ Fútbol', '🏐 Vóley', '🎉 Evento']);
+
   const msg =
     `🏟️ *NUESTRAS CANCHAS*\n\n` +
-    `⚽ *Fútbol 7*\n   Grass sintético · 14 jugadores\n\n` +
-    `🏐 *Vóley*\n   Cancha reglamentaria · Iluminación LED\n\n` +
-    `🎉 *Eventos*\n   Cumpleaños, torneos, corporativos\n\n` +
-    `💰 *S/. ${PRECIO_HORA}/hora*  🎁 Solo S/. ${PRECIO_HORA * DESCUENTO_PAGO} de adelanto (50%)\n\n` +
+    canchas.map(c => `${c}\n`).join('\n') +
+    `\n💰 *S/. ${precio}/hora*  🎁 Solo S/. ${precio * descuento} de adelanto (${descuento * 100}%)\n\n` +
     `¿Cuál cancha deseas reservar?`;
 
-  await enviarBotones(phone, '🏟️ Nuestras Canchas', msg, [
-    { id: 'TIPO_FUTBOL', title: '⚽ Fútbol' },
-    { id: 'TIPO_VOLEY', title: '🏐 Vóley' },
-    { id: 'TIPO_EVENTO', title: '🎉 Evento' }
-  ]);
+  // Tomar hasta 3 canchas para los botones
+  const botonesCanchas = canchas.slice(0, 3).map((c, i) => ({
+    id:    `TIPO_${i}`,
+    title: c.length > 20 ? c.substring(0, 20) : c
+  }));
+
+  await enviarBotones(phone, '🏟️ Nuestras Canchas', msg, botonesCanchas, ctx);
 }
 
-// FUNCION QUE ENCUENTRA Y ENVIA LAS UBICACIONES DE LAS CANCHAS CERCANAS
-export async function mostrarUbiCercanas(phone) {
-  const conv = await getEstado(phone);
+// ─── CANCHAS CERCANAS ────────────────────────────────────
+export async function mostrarUbiCercanas(phone, ctx) {
+  const botId = ctx?.botId || 'default';
+  const conv  = await getEstado(phone, botId);
 
   let lat = conv.datos?.lat;
   let lng = conv.datos?.lng;
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    lat = -9.93;
-    lng = -76.24;
-  }
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) { lat = -9.93; lng = -76.24; }
 
   try {
     const resultados = await buscarCanchas(lat, lng);
-
     if (resultados.length === 0) {
-      agregarAColaMensajes(phone, () => enviarTexto(phone, 
-        `❌ No encontré canchas cercanas en este momento.\n\n` +
-        `⏳ Intenta en unos minutos o escribe *MENU* para ver otras opciones.`
+      agregarAColaMensajes(phone, () => enviarTexto(phone,
+        `❌ No encontré canchas cercanas.\n\n⏳ Intenta en unos minutos o escribe *MENU*.`, ctx
       ));
       return;
     }
-
-    agregarAColaMensajes(phone, () => enviarTexto(phone, "⚽ *Canchas Cercanas:*"));
-
+    agregarAColaMensajes(phone, () => enviarTexto(phone, "⚽ *Canchas Cercanas:*", ctx));
     for (let i = 0; i < Math.min(10, resultados.length); i++) {
-      const lugar = resultados[i];
-      const nombre = lugar.nombre || `Cancha ${i + 1}`;
+      const lugar    = resultados[i];
+      const nombre   = lugar.nombre || `Cancha ${i + 1}`;
       const distancia = lugar.distancia ? `📍 ${lugar.distancia}m` : '';
-
-      // Agregar a la cola sin await - la cola procesará con delays
-      agregarAColaMensajes(phone, () => enviarTexto(phone, `${i + 1}. *${nombre}* ${distancia}`));
-      agregarAColaMensajes(phone, () => enviarUbicacionLugar(phone, lugar.lat, lugar.lng, nombre));
+      agregarAColaMensajes(phone, () => enviarTexto(phone, `${i + 1}. *${nombre}* ${distancia}`, ctx));
+      agregarAColaMensajes(phone, () => enviarUbicacionLugar(phone, lugar.lat, lugar.lng, nombre, ctx));
     }
   } catch (error) {
     console.error("Error al buscar canchas:", error);
     agregarAColaMensajes(phone, () => enviarTexto(phone,
-      `⚠️ Hubo un problema al buscar canchas cercanas.\n\n` +
-      `🔄 *Por favor intenta de nuevo en unos momentos*\n\n` +
-      `Si el problema persiste, escribe *MENU* para ver otras opciones.`
+      `⚠️ Problema al buscar canchas.\n\n🔄 Intenta de nuevo o escribe *MENU*.`, ctx
     ));
   }
 }
 
-// ─── HORAS DISPONIBLES (lista interactiva) ───────────────
-// WhatsApp límites: título sección ≤24 chars, máx 10 filas/lista
-// Muestra TODOS los slots: ✅ disponibles y 🔴 ocupados
-async function mostrarHorasDisponibles(phone, fecha, horasYaElegidas = [], pagina = 'manana') {
-  const TODOS = ['07:00', '08:00', '09:00', '10:00', '11:00', '12:00', '13:00',
-    '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00', '22:00'];
-  const disponibles = await getSlotsDisponibles(fecha); // ya en BD
-
-  // Dividir por turno  (sin "horasYaElegidas" — esas siguen disponibles hasta confirmar)
-  const manana = TODOS.filter(h => parseInt(h) < 14);
-  const tarde = TODOS.filter(h => parseInt(h) >= 14);
+// ─── HORARIOS ────────────────────────────────────────────
+async function mostrarHorasDisponibles(phone, fecha, horasYaElegidas = [], pagina = 'manana', ctx) {
+  const TODOS = ['07:00','08:00','09:00','10:00','11:00','12:00','13:00',
+                 '14:00','15:00','16:00','17:00','18:00','19:00','20:00','21:00','22:00'];
+  const botId      = ctx?.botId || 'default';
+  const disponibles = await getSlotsDisponibles(fecha, botId);
+  const manana      = TODOS.filter(h => parseInt(h) < 14);
+  const tarde       = TODOS.filter(h => parseInt(h) >= 14);
 
   if (pagina === 'manana') {
-    await setEstado(phone, 'ESPERANDO_HORA', { paginaHoras: 'manana' });
-    await _enviarListaHoras(phone, manana, disponibles, horasYaElegidas,
-      'Manana 07:00-13:00',           // ≤24 chars ✅
-      tarde.length > 0 ? 'tarde' : null
-    );
+    await setEstado(phone, 'ESPERANDO_HORA', { paginaHoras: 'manana' }, botId);
+    await _enviarListaHoras(phone, manana, disponibles, horasYaElegidas, 'Manana 07:00-13:00', tarde.length > 0 ? 'tarde' : null, ctx);
   } else {
-    await setEstado(phone, 'ESPERANDO_HORA', { paginaHoras: 'tarde' });
-    await _enviarListaHoras(phone, tarde, disponibles, horasYaElegidas,
-      'Tarde/Noche 14:00-22:00',      // ≤24 chars ✅ (24 chars exactos)
-      manana.length > 0 ? 'manana' : null
-    );
+    await setEstado(phone, 'ESPERANDO_HORA', { paginaHoras: 'tarde' }, botId);
+    await _enviarListaHoras(phone, tarde, disponibles, horasYaElegidas, 'Tarde/Noche 14:00-22:00', manana.length > 0 ? 'manana' : null, ctx);
   }
 }
 
-/**
- * Construye y envía la lista de WhatsApp.
- * - `turno`          : array de horas del turno (manana o tarde)
- * - `disponibles`    : horas libres en BD
- * - `horasElegidas`  : las que el usuario ya agregó al carrito
- * - `paginaNav`      : 'manana' | 'tarde' | null (para ítem de navegación)
- *
- * WhatsApp: título sección ≤24 chars, ≤10 filas totales, ídem título ítem ≤24
- */
-async function _enviarListaHoras(phone, turno, disponibles, horasElegidas, tituloSeccion, paginaNav) {
-  const items = turno.map(h => {
-    const estaEnCarrito = horasElegidas.includes(h);
-    const estaDisponible = disponibles.includes(h);
-    const estaOcupado = !estaDisponible && !estaEnCarrito;
-
+async function _enviarListaHoras(phone, turno, disponibles, horasElegidas, tituloSeccion, paginaNav, ctx) {
+  const precio = cfg(ctx, 'precio_hora', 50);
+  const items  = turno.map(h => {
+    const estaEnCarrito  = horasElegidas.includes(h);
+    const estaOcupado    = !disponibles.includes(h) && !estaEnCarrito;
     let emoji, desc;
-    if (estaEnCarrito) { emoji = '🛒'; desc = 'Ya en tu reserva'; }
+    if (estaEnCarrito)    { emoji = '🛒'; desc = 'Ya en tu reserva'; }
     else if (estaOcupado) { emoji = '🔴'; desc = 'Ocupado'; }
-    else { emoji = '✅'; desc = `S/. ${PRECIO_HORA} · libre`; }
-
-    return {
-      id: `HORA_${h.replace(':', '')}`,
-      title: `${emoji} ${h}`,          // máx ~8 chars ✅
-      description: desc
-    };
+    else                  { emoji = '✅'; desc = `S/. ${precio} · libre`; }
+    return { id: `HORA_${h.replace(':', '')}`, title: `${emoji} ${h}`, description: desc };
   });
 
-  // ── Separar la nav COMPLETAMENTE de los ítems de hora ──
-  // Regla WhatsApp: máx 10 filas en total (= 9 horas + 1 nav, o 10 horas sin nav)
-  // Bug anterior: se pusheaba nav en items[] Y luego se volvía a agregar → ID duplicado ❌
-  const MAX_HORAS = paginaNav ? 9 : 10;
-  const rowsFinales = items.slice(0, MAX_HORAS); // solo horas, sin nav
-
+  const MAX_HORAS  = paginaNav ? 9 : 10;
+  const rowsFinales = items.slice(0, MAX_HORAS);
   if (paginaNav) {
-    const navLabel = paginaNav === 'tarde' ? '>> Ver tarde/noche' : '<< Ver manana';
-    rowsFinales.push({                           // nav se agrega exactamente 1 vez ✅
-      id: `PAGINA_${paginaNav.toUpperCase()}`,
-      title: navLabel,
+    rowsFinales.push({
+      id:          `PAGINA_${paginaNav.toUpperCase()}`,
+      title:       paginaNav === 'tarde' ? '>> Ver tarde/noche' : '<< Ver manana',
       description: 'Ver otros horarios'
     });
   }
 
   const resumen = horasElegidas.length > 0
-    ? `\n\n🛒 *Elegidas:* ${horasElegidas.join(', ')} · S/. ${horasElegidas.length * PRECIO_HORA}`
+    ? `\n\n🛒 *Elegidas:* ${horasElegidas.join(', ')} · S/. ${horasElegidas.length * precio}`
     : '';
 
   await enviarLista(
-    phone,
-    'Elige tu hora',
+    phone, 'Elige tu hora',
     `📅 *Horarios disponibles*${resumen}\n\n✅ Libre · 🔴 Ocupado · 🛒 En tu reserva\n\nElige del menú 👇`,
     'Ver horarios',
-    [{ title: tituloSeccion, rows: rowsFinales }]
+    [{ title: tituloSeccion, rows: rowsFinales }],
+    ctx
   );
 }
-
 
 // ─── PROCESAR MENSAJE PRINCIPAL ──────────────────────────
-export async function procesarMensaje(phone, mensaje, tipo = 'text') {
-  const conv = await getEstado(phone);
+export async function procesarMensaje(phone, mensaje, tipo = 'text', ctx = {}) {
+  const botId = ctx.botId || 'default';
+  const conv  = await getEstado(phone, botId);
   const estado = conv.estado;
 
-  console.log(`📱 ${phone} [${estado}]: ${mensaje}`);
+  console.log(`📱 [${botId}] ${phone} [${estado}]: ${mensaje}`);
 
-  // ── Botones interactivos ─────────────────────────────────
   if (tipo === 'interactive') {
-    await procesarBoton(phone, mensaje, conv);
+    await procesarBoton(phone, mensaje, conv, ctx);
     return;
   }
 
-  // ── Comandos globales ────────────────────────────────────
   const norm = normalizar(mensaje);
+  const ESTADOS_CRITICOS = ['ESPERANDO_COMPROBANTE', 'PAGO_EN_REVISION', 'CONFIRMANDO_RESERVA'];
+  const enEstadoCritico  = ESTADOS_CRITICOS.includes(estado);
 
-  // MENU global - funciona en cualquier estado
   if (['menu', 'inicio', 'volver', 'atras', 'salir', 'start'].includes(norm)) {
-    await resetEstado(phone);
-    await inicioPri(phone);
+    await resetEstado(phone, botId);
+    await inicioPri(phone, ctx);
     return;
   }
 
-  // 🔍 COMANDO GRASS (si dice "grasses" o "canchas")
-  if (norm.includes("grass") || norm.includes("cancha")) {
-    await mostrarUbiCercanas(phone);
+  if (!enEstadoCritico && (norm.includes('grass') || norm.includes('cancha'))) {
+    await mostrarUbiCercanas(phone, ctx);
     return;
   }
 
-  // ── Estado INICIO o cualquier saludo ─────────────────────
-  if (estado === 'INICIO' || esSaludo(mensaje)) {
-    await setEstado(phone, 'MENU_PRINCIPAL');
-    await enviarTexto(phone,
-      `🌿 *¡Bienvenido!*, Soy un bot que te ayudara en:\n
-      ✅ *Reservar*\n
-      ✅ *Buscar canchas*`
-    );
-    await inicioPri(phone);
+  if (estado === 'INICIO' || (esSaludo(mensaje) && !enEstadoCritico)) {
+    await setEstado(phone, 'MENU_PRINCIPAL', {}, botId);
+    const bienvenida = cfg(ctx, 'mensajes.bienvenida', '🌿 *¡Bienvenido!*, Soy un bot que te ayudará en:\n\n✅ *Reservar*\n✅ *Buscar canchas*');
+    await enviarTexto(phone, bienvenida, ctx);
+    await inicioPri(phone, ctx);
     return;
   }
 
-  // ── Flujo de reserva ─────────────────────────────────────
   switch (estado) {
 
+    case 'ESPERANDO_DNI': {
+      const dniLimpio = mensaje.trim().replace(/\s+/g, '');
+      if (!esFormatoDNI(dniLimpio)) {
+        await enviarTexto(phone,
+          `❌ Ese DNI no parece válido 😅\n\nIngresa exactamente *8 dígitos*.\nEjemplo: *12345678*`, ctx
+        );
+        return;
+      }
+      await setEstado(phone, 'ESPERANDO_NOMBRE', { dni: dniLimpio }, botId);
+      await enviarTexto(phone,
+        `✅ DNI *${dniLimpio}* registrado.\n\n👤 ¿Cuál es tu *nombre*? (solo nombres)\nEjemplo: _Juan Carlos_`, ctx
+      );
+      break;
+    }
 
-
-// ── DNI - sin reniec(solucion temporal)──────────────────────────────────────────────
-case 'ESPERANDO_DNI': {
-  const dniLimpio = mensaje.trim().replace(/\s+/g, '');
-
-  if (!esFormatoDNI(dniLimpio)) {
-    await enviarTexto(phone,
-      `❌ Ese DNI no parece válido 😅\n\n` +
-      `Ingresa exactamente *8 dígitos*, sin espacios ni letras.\n` +
-      `Ejemplo: *12345678*\n\nInténtalo de nuevo:`
-    );
-    return;
-  }
-
-  // ── MODO LOCAL: sin consulta a RENIEC, pedir nombre directo ──
-  await setEstado(phone, 'ESPERANDO_NOMBRE', { dni: dniLimpio });
-  await enviarTexto(phone,
-    `✅ DNI *${dniLimpio}* registrado.\n\n` +
-    `👤 ¿Cuál es tu *nombre*? (solo nombres, sin apellidos)\n` +
-    `Ejemplo: _Juan Carlos_`
-  );
-  break;
-}
-
-
-
-
-    // // ── DNI ──────────────────────────────────────────────
-    // case 'ESPERANDO_DNI': {
-    //   const dniLimpio = mensaje.trim().replace(/\s+/g, '');
-
-    //   if (!esFormatoDNI(dniLimpio)) {
-    //     await enviarTexto(phone,
-    //       `❌ Ese DNI no parece válido 😅\n\n` +
-    //       `Ingresa exactamente *8 dígitos*, sin espacios ni letras.\n` +
-    //       `Ejemplo: *12345678*\n\nInténtalo de nuevo:`
-    //     );
-    //     return;
-    //   }
-
-    //   // Indicar que estamos buscando
-    //   await enviarTexto(phone, `🔍 Buscando tu DNI *${dniLimpio}*... un momento 🙏`);
-
-    //   // Buscar en BD → API (cache-first)
-    //   const persona = await buscarDNI(dniLimpio);
-
-    //   if (persona) {
-    //     const origen = persona.fuente === 'bd' ? 'nuestro sistema' : 'RENIEC';
-    //     await setEstado(phone, 'ESPERANDO_FECHA', {
-    //       dni: dniLimpio,
-    //       nombres: persona.nombres,
-    //       apellidos: persona.apellidos
-    //     });
-    //     await enviarTexto(phone,
-    //       `✅ ¡Te encontré en ${origen}! 😊\n\n` +
-    //       `👤 *${persona.nombres} ${persona.apellidos}*\n` +
-    //       `🪪 DNI: ${dniLimpio}\n\n` +
-    //       `📅 *¿Para qué fecha quieres reservar?*\n\n` +
-    //       `Puedes escribir:\n` +
-    //       `• _hoy_ · _mañana_ · _pasado mañana_\n` +
-    //       `• O la fecha: *DD/MM/AAAA* (ej: 25/03/2026)`
-    //     );
-    //   } else {
-    //     // No encontrado → pedir nombre manual
-    //     await setEstado(phone, 'ESPERANDO_NOMBRE', { dni: dniLimpio });
-    //     await enviarTexto(phone,
-    //       `ℹ️ No encontré tu DNI en nuestros registros.\n\n` +
-    //       `👤 ¿Cuál es tu *nombre*? (solo nombres, sin apellidos)\n` +
-    //       `Ejemplo: _Juan Carlos_`
-    //     );
-    //   }
-    //   break;
-    // }
-
-    // ── NOMBRE ──────────────────────────────────────────
     case 'ESPERANDO_NOMBRE': {
       const nombre = mensaje.trim();
       if (nombre.length < 2) {
-        await enviarTexto(phone, `❌ Nombre muy corto. Escribe tu *nombre completo*:`);
+        await enviarTexto(phone, `❌ Nombre muy corto. Escribe tu *nombre completo*:`, ctx);
         return;
       }
-      await setEstado(phone, 'ESPERANDO_APELLIDO', { nombres: nombre });
+      await setEstado(phone, 'ESPERANDO_APELLIDO', { nombres: nombre }, botId);
       await enviarTexto(phone,
-        `✅ Nombre: *${nombre}*\n\n` +
-        `👤 Ahora tus *apellidos* (paterno y materno):\n` +
-        `Ejemplo: _Pérez Ríos_`
+        `✅ Nombre: *${nombre}*\n\n👤 Ahora tus *apellidos*:\nEjemplo: _Pérez Ríos_`, ctx
       );
       break;
     }
 
-    // ── APELLIDO ────────────────────────────────────────
     case 'ESPERANDO_APELLIDO': {
       const apellido = mensaje.trim();
       if (apellido.length < 2) {
-        await enviarTexto(phone, `❌ Apellido muy corto. Ingrésalo completo:`);
+        await enviarTexto(phone, `❌ Apellido muy corto. Ingrésalo completo:`, ctx);
         return;
       }
-      await setEstado(phone, 'ESPERANDO_FECHA', { apellidos: apellido });
-
-      // Guardar en BD para la próxima vez
+      await setEstado(phone, 'ESPERANDO_FECHA', { apellidos: apellido }, botId);
       await guardarPersonaManual(conv.datos.dni, conv.datos.nombres, apellido);
-
       await enviarTexto(phone,
         `✅ Perfecto, *${conv.datos.nombres} ${apellido}*. 👋\n\n` +
         `📅 *¿Para qué fecha quieres reservar?*\n\n` +
-        `Puedes escribir:\n` +
-        `• _hoy_ · _mañana_ · _pasado mañana_\n` +
-        `• O la fecha: *DD/MM/AAAA* (ej: 25/03/2026)`
+        `• _hoy_ · _mañana_ · _pasado mañana_\n• O: *DD/MM/AAAA*`, ctx
       );
       break;
     }
 
-    // ── FECHA ────────────────────────────────────────────
     case 'ESPERANDO_FECHA': {
-      const fechaObj = parsearFechaNatural(mensaje);
+      const fechaObj  = parsearFechaNatural(mensaje);
       const hoyInicio = new Date(); hoyInicio.setHours(0, 0, 0, 0);
-
       if (!fechaObj || isNaN(fechaObj)) {
-        await enviarTexto(phone,
-          `😅 No entendí esa fecha.\n\n` +
-          `Prueba con:\n` +
-          `• *hoy* · *mañana* · *pasado mañana*\n` +
-          `• O escribe: *DD/MM/AAAA* → ej: *25/03/2026*`
-        );
+        await enviarTexto(phone, `😅 No entendí esa fecha.\n\nPrueba: *hoy*, *mañana* o *DD/MM/AAAA*`, ctx);
         return;
       }
-
       if (fechaObj < hoyInicio) {
-        await enviarTexto(phone,
-          `❌ Esa fecha ya pasó 😅\nElige una fecha *de hoy en adelante*:`
-        );
+        await enviarTexto(phone, `❌ Esa fecha ya pasó. Elige una *de hoy en adelante*:`, ctx);
         return;
       }
-
       const fKey = fechaKey(fechaObj);
-      const fDisp = formatearFecha(fechaObj);
-      const fNom = nombreFecha(fechaObj);
-
       await setEstado(phone, 'ESPERANDO_HORA', {
         fecha: fKey,
-        fechaDisplay: fDisp,
-        fechaNombre: fNom,
+        fechaDisplay: formatearFecha(fechaObj),
+        fechaNombre:  nombreFecha(fechaObj),
         horasElegidas: []
-      });
-
-      await enviarTexto(phone,
-        `📅 *${fNom} (${fDisp})* — ¡Perfecto! 🗓️\n\nElige tu(s) hora(s) 👇`
-      );
-      await mostrarHorasDisponibles(phone, fKey, []);
+      }, botId);
+      await enviarTexto(phone, `📅 *${nombreFecha(fechaObj)} (${formatearFecha(fechaObj)})* — ¡Perfecto! 🗓️\n\nElige tu(s) hora(s) 👇`, ctx);
+      await mostrarHorasDisponibles(phone, fKey, [], 'manana', ctx);
       break;
     }
 
-    // ── HORA (fallback texto libre) ───────────────────────
     case 'ESPERANDO_HORA': {
       const horaExtraida = extraerHoraDeTexto(mensaje);
-      const pagActual = conv.datos.paginaHoras || 'manana';
-
+      const pagActual    = conv.datos.paginaHoras || 'manana';
       if (horaExtraida) {
-        const ocupado = await isSlotOcupado(conv.datos.fecha, horaExtraida);
+        const ocupado = await isSlotOcupado(conv.datos.fecha, horaExtraida, botId);
         if (ocupado) {
-          await enviarTexto(phone,
-            `❌ Las *${horaExtraida}* ya están ocupadas 😔\nElige otro horario:`
-          );
-          await mostrarHorasDisponibles(phone, conv.datos.fecha, conv.datos.horasElegidas || [], pagActual);
+          await enviarTexto(phone, `❌ Las *${horaExtraida}* ya están ocupadas 😔\nElige otro horario:`, ctx);
+          await mostrarHorasDisponibles(phone, conv.datos.fecha, conv.datos.horasElegidas || [], pagActual, ctx);
           return;
         }
-        await agregarHoraYPreguntar(phone, horaExtraida, conv);
+        await agregarHoraYPreguntar(phone, horaExtraida, conv, ctx);
       } else {
-        await enviarTexto(phone, `😅 No entendí eso. Por favor usa el menú de horarios 👇`);
-        await mostrarHorasDisponibles(phone, conv.datos.fecha, conv.datos.horasElegidas || [], pagActual);
+        await enviarTexto(phone, `😅 No entendí eso. Por favor usa el menú de horarios 👇`, ctx);
+        await mostrarHorasDisponibles(phone, conv.datos.fecha, conv.datos.horasElegidas || [], pagActual, ctx);
       }
       break;
     }
 
-    // ── NÚMERO DE OPERACIÓN ───────────────────────────────
     case 'ESPERANDO_COMPROBANTE': {
       const reservaId = conv.datos.reservaId;
-      await actualizarReserva(reservaId, {
-        numeroOperacion: mensaje.trim(),
-        estado: 'COMPROBANTE_ENVIADO'
-      });
-      await setEstado(phone, 'PAGO_EN_REVISION');
+      await actualizarReserva(reservaId, { numeroOperacion: mensaje.trim(), estado: 'COMPROBANTE_ENVIADO' });
+      await setEstado(phone, 'PAGO_EN_REVISION', {}, botId);
       await enviarTexto(phone,
-        `✅ *Número de operación recibido:* ${mensaje.trim()}\n\n` +
-        `📸 Ahora envíanos una *captura de pantalla* del comprobante. 👇`
+        `✅ *Número de operación recibido:* ${mensaje.trim()}\n\n📸 Ahora envíanos la *captura del comprobante*. 👇`, ctx
       );
       break;
     }
 
-    // ── PAGO EN REVISIÓN ──────────────────────────────────
     case 'PAGO_EN_REVISION':
       await enviarTexto(phone,
-        `⏳ Tu pago está siendo *revisado por nuestro personal*.\n\n` +
-        `Te avisaremos pronto. ¡Gracias! 🙏\n\n` +
-        `_Escribe *MENU* si necesitas ayuda._`
+        `⏳ Tu pago está siendo *revisado*.\n\nTe avisaremos pronto. 🙏\n\n_Escribe *MENU* si necesitas ayuda._`, ctx
       );
       break;
 
-    // ── CONSULTA CON IA ───────────────────────────────────
     case 'CONSULTANDO': {
-      const historial = conv.historial || [];
-      const respuesta = await preguntarIA(historial, mensaje);
-      await agregarHistorial(phone, 'user', mensaje);
-      await agregarHistorial(phone, 'assistant', respuesta);
-      await enviarTexto(phone, respuesta);
-      await enviarTexto(phone, '\n_Escribe *MENU* para ver opciones._');
+      const historial  = conv.historial || [];
+      const respuesta  = await preguntarIA(historial, mensaje);
+      await agregarHistorial(phone, 'user',      mensaje,   botId);
+      await agregarHistorial(phone, 'assistant', respuesta, botId);
+      await enviarTexto(phone, respuesta, ctx);
+      await enviarTexto(phone, '\n_Escribe *MENU* para ver opciones._', ctx);
       break;
     }
 
-    // ── CONSULTA DISPONIBILIDAD ───────────────────────────
     case 'ESPERANDO_FECHA_CONSULTA': {
-      const fechaObj = parsearFechaNatural(mensaje);
+      const fechaObj  = parsearFechaNatural(mensaje);
       const hoyInicio = new Date(); hoyInicio.setHours(0, 0, 0, 0);
-
       if (!fechaObj || isNaN(fechaObj) || fechaObj < hoyInicio) {
-        await enviarTexto(phone,
-          `😅 No entendí esa fecha.\n` +
-          `Prueba: *hoy*, *mañana*, *pasado mañana* o *DD/MM/AAAA*`
-        );
+        await enviarTexto(phone, `😅 No entendí esa fecha.\nPrueba: *hoy*, *mañana* o *DD/MM/AAAA*`, ctx);
         return;
       }
-
       const fKey = fechaKey(fechaObj);
-      const fDisp = formatearFecha(fechaObj);
-      const fNom = nombreFecha(fechaObj);
-      const disponibles = await getSlotsDisponibles(fKey);
-
+      const disponibles = await getSlotsDisponibles(fKey, botId);
       if (disponibles.length === 0) {
-        await enviarTexto(phone,
-          `😔 No hay horarios para *${fNom} (${fDisp})*.\n\n` +
-          `Prueba con otra fecha o escribe *MENU*. 😊`
-        );
+        await enviarTexto(phone, `😔 No hay horarios para *${nombreFecha(fechaObj)} (${formatearFecha(fechaObj)})*.\n\nPrueba con otra fecha o escribe *MENU*.`, ctx);
       } else {
-        const lista = disponibles.map(h => `✅ ${h}`).join('\n');
         await enviarTexto(phone,
-          `📅 *Disponibilidad ${fNom} (${fDisp}):*\n\n${lista}\n\n` +
-          `Para *reservar*, escribe *MENU* y elige Reservar. 😊`
+          `📅 *Disponibilidad ${nombreFecha(fechaObj)} (${formatearFecha(fechaObj)}):*\n\n` +
+          disponibles.map(h => `✅ ${h}`).join('\n') +
+          `\n\nPara *reservar*, escribe *MENU* y elige Reservar. 😊`, ctx
         );
       }
       break;
     }
 
-    // ── DEFAULT ───────────────────────────────────────────
     default:
       if (/reserv|cancha|futbol|voley|evento|jugar/i.test(mensaje)) {
-        await setEstado(phone, 'MENU_PRINCIPAL');
-        await mostrarMenuPrincipal(phone);
+        await setEstado(phone, 'MENU_PRINCIPAL', {}, botId);
+        await mostrarMenuPrincipal(phone, ctx);
         return;
       }
-      // Sin contexto → mostrar menú
-      await resetEstado(phone);
-      await mostrarMenuPrincipal(phone);
+      await resetEstado(phone, botId);
+      await mostrarMenuPrincipal(phone, ctx);
   }
 }
 
 // ─── AGREGAR HORA Y PREGUNTAR ────────────────────────────
-async function agregarHoraYPreguntar(phone, hora, conv) {
+async function agregarHoraYPreguntar(phone, hora, conv, ctx) {
+  const botId       = ctx?.botId || 'default';
+  const precio      = cfg(ctx, 'precio_hora', 50);
+  const descuento   = cfg(ctx, 'descuento_pago', 0.5);
   const horasElegidas = [...(conv.datos.horasElegidas || []), hora];
-  await setEstado(phone, 'ESPERANDO_HORA', { horasElegidas });
+  await setEstado(phone, 'ESPERANDO_HORA', { horasElegidas }, botId);
 
-  const total = horasElegidas.length * PRECIO_HORA;
-  const adelanto = total * DESCUENTO_PAGO;
+  const total   = horasElegidas.length * precio;
+  const adelanto = total * descuento;
 
   await enviarBotones(
     phone,
@@ -514,139 +367,110 @@ async function agregarHoraYPreguntar(phone, hora, conv) {
     `📋 *Horas seleccionadas:* ${horasElegidas.join(', ')}\n` +
     `🕐 Total: *${horasElegidas.length} hora(s)*\n` +
     `💰 Costo total: *S/. ${total}*\n` +
-    `✅ Adelanto (50%): *S/. ${adelanto}*\n\n` +
+    `✅ Adelanto (${descuento * 100}%): *S/. ${adelanto}*\n\n` +
     `¿Agregas otra hora o continuamos?`,
     [
-      { id: 'AGREGAR_HORA', title: '➕ Agregar otra hora' },
+      { id: 'AGREGAR_HORA',    title: '➕ Agregar otra hora' },
       { id: 'FINALIZAR_HORAS', title: '✅ Continuar' }
-    ]
+    ],
+    ctx
   );
 }
 
 // ─── PROCESAR BOTONES ────────────────────────────────────
-async function procesarBoton(phone, buttonId, conv) {
+async function procesarBoton(phone, buttonId, conv, ctx) {
+  const botId = ctx?.botId || 'default';
 
-    if (buttonId === "MEN_RES") {
-      await mostrarMenuPrincipal(phone);
-      return;
-    }
+  if (buttonId === 'MEN_RES') { await mostrarMenuPrincipal(phone, ctx); return; }
 
-    if (buttonId === 'ubicaciones') {
+  if (buttonId === 'ubicaciones') {
     await enviarTexto(phone,
-      `⚽ BUSCA GRASSES SINTÉTICOS CERCANOS\n\n`+
+      `⚽ BUSCA GRASSES SINTÉTICOS CERCANOS\n\n` +
       `📍 *Comparte tu ubicación* para encontrar canchas cercanas\n\n` +
-      `📍 *Para compartir tu ubicación:*\n\n` +
-      `1️⃣ Toca 📎 (clip)\n` +
-      `2️⃣ Selecciona 📍 *Ubicación*\n` +
-      `3️⃣ Elige tu ubicación actual\n` +
-      `\n` +
-      `¡Listo! Te buscaré canchas cercanas. ⚽`
+      `1️⃣ Toca 📎 (clip)\n2️⃣ Selecciona 📍 *Ubicación*\n3️⃣ Elige tu ubicación actual\n\n` +
+      `¡Listo! Te buscaré canchas cercanas. ⚽`, ctx
     );
     return;
   }
 
+  if (buttonId === 'RESERVAR')       { await mostrarProductos(phone, ctx); return; }
+  if (buttonId === 'CONSULTAR')      { await setEstado(phone, 'CONSULTANDO', {}, botId); await enviarTexto(phone, '💬 ¡Con gusto! ¿En qué puedo ayudarte?', ctx); return; }
+  if (buttonId === 'VER_DISPONIBLE') { await setEstado(phone, 'ESPERANDO_FECHA_CONSULTA', {}, botId); await enviarTexto(phone, `📅 *¿Para qué fecha?*\n\nEscribe: *hoy*, *mañana* o *DD/MM/AAAA*`, ctx); return; }
 
-  if (buttonId === 'RESERVAR') {
-    await mostrarProductos(phone);
+  // ── Tipo de cancha dinámico ──────────────────────────
+  // Soporta IDs legacy (TIPO_FUTBOL etc.) y nuevos (TIPO_0, TIPO_1, TIPO_2)
+  const tiposLegacy = { TIPO_FUTBOL: '⚽ Fútbol', TIPO_VOLEY: '🏐 Vóley', TIPO_EVENTO: '🎉 Evento' };
+  const canchasConfig = cfg(ctx, 'canchas', ['⚽ Fútbol', '🏐 Vóley', '🎉 Evento']);
+
+  if (tiposLegacy[buttonId]) {
+    await setEstado(phone, 'ESPERANDO_DNI', { tipoCancha: tiposLegacy[buttonId] }, botId);
+    await enviarTexto(phone, `🏟️ Seleccionaste: *${tiposLegacy[buttonId]}*\n\n🪪 Ingresa tu *DNI* (8 dígitos):`, ctx);
     return;
   }
 
-  if (buttonId === 'CONSULTAR') {
-    await setEstado(phone, 'CONSULTANDO');
-    await enviarTexto(phone, '💬 ¡Con gusto! ¿En qué puedo ayudarte? Escríbeme tu pregunta:');
+  const matchTipo = buttonId.match(/^TIPO_(\d+)$/);
+  if (matchTipo) {
+    const idx    = parseInt(matchTipo[1]);
+    const cancha = canchasConfig[idx] || canchasConfig[0];
+    await setEstado(phone, 'ESPERANDO_DNI', { tipoCancha: cancha }, botId);
+    await enviarTexto(phone, `🏟️ Seleccionaste: *${cancha}*\n\n🪪 Ingresa tu *DNI* (8 dígitos):`, ctx);
     return;
   }
 
-  if (buttonId === 'VER_DISPONIBLE') {
-    await setEstado(phone, 'ESPERANDO_FECHA_CONSULTA');
-    await enviarTexto(phone,
-      `📅 *¿Para qué fecha quieres ver disponibilidad?*\n\n` +
-      `Escribe: *hoy*, *mañana*, *pasado mañana* o *DD/MM/AAAA*`
-    );
-    return;
-  }
-
-  // ── Tipo de cancha ─────────────────────────────────────
-  if (['TIPO_FUTBOL', 'TIPO_VOLEY', 'TIPO_EVENTO'].includes(buttonId)) {
-    const tipos = { TIPO_FUTBOL: '⚽ Fútbol', TIPO_VOLEY: '🏐 Vóley', TIPO_EVENTO: '🎉 Evento' };
-    await setEstado(phone, 'ESPERANDO_DNI', { tipoCancha: tipos[buttonId] });
-    await enviarTexto(phone,
-      `🏟️ Seleccionaste: *${tipos[buttonId]}*\n\n` +
-      `Para continuar necesito verificar tu identidad.\n\n` +
-      `🪪 Ingresa tu *número de DNI* (8 dígitos):`
-    );
-    return;
-  }
-
-  // ── Navegación de páginas (mañana / tarde) ────────────
+  // ── Navegación horarios ───────────────────────────────
   if (buttonId === 'PAGINA_TARDE' || buttonId === 'PAGINA_MANANA') {
     const pagina = buttonId === 'PAGINA_TARDE' ? 'tarde' : 'manana';
-    await mostrarHorasDisponibles(phone, conv.datos.fecha, conv.datos.horasElegidas || [], pagina);
+    await mostrarHorasDisponibles(phone, conv.datos.fecha, conv.datos.horasElegidas || [], pagina, ctx);
     return;
   }
 
-  // ── Hora seleccionada desde la lista ───────────────────
+  // ── Hora seleccionada ─────────────────────────────────
   if (buttonId.startsWith('HORA_')) {
-    // Convertir HORA_0700 → 07:00, HORA_1430 → 14:30
     const horaNum = buttonId.replace('HORA_', '');
-    const hora = horaNum.length === 4 
-      ? `${horaNum.substring(0, 2)}:${horaNum.substring(2)}` 
+    const hora    = horaNum.length === 4
+      ? `${horaNum.substring(0, 2)}:${horaNum.substring(2)}`
       : horaNum;
-    const pagActual = conv.datos.paginaHoras || 'manana';
-    const horasElegidas = conv.datos.horasElegidas || [];
+    const pagActual      = conv.datos.paginaHoras || 'manana';
+    const horasElegidas  = conv.datos.horasElegidas || [];
 
-    // Ya está en el carrito del usuario
     if (horasElegidas.includes(hora)) {
-      await enviarTexto(phone,
-        `🛒 Las *${hora}* ya están en tu reserva.\n\nElige otra hora o pulsa *Continuar*.`
-      );
-      await mostrarHorasDisponibles(phone, conv.datos.fecha, horasElegidas, pagActual);
+      await enviarTexto(phone, `🛒 Las *${hora}* ya están en tu reserva.\n\nElige otra o pulsa *Continuar*.`, ctx);
+      await mostrarHorasDisponibles(phone, conv.datos.fecha, horasElegidas, pagActual, ctx);
       return;
     }
-
-    // Ocupada por otra reserva
-    const ocupado = await isSlotOcupado(conv.datos.fecha, hora);
+    const ocupado = await isSlotOcupado(conv.datos.fecha, hora, botId);
     if (ocupado) {
-      await enviarTexto(phone,
-        `🔴 Lo sentimos, las *${hora}* ya están ocupadas por otra persona.\n\nElige otro horario disponible (✅):`
-      );
-      await mostrarHorasDisponibles(phone, conv.datos.fecha, horasElegidas, pagActual);
+      await enviarTexto(phone, `🔴 Las *${hora}* ya están ocupadas.\n\nElige otro horario (✅):`, ctx);
+      await mostrarHorasDisponibles(phone, conv.datos.fecha, horasElegidas, pagActual, ctx);
       return;
     }
-
-    // ✅ Disponible → agregar al carrito
-    await agregarHoraYPreguntar(phone, hora, conv);
+    await agregarHoraYPreguntar(phone, hora, conv, ctx);
     return;
   }
 
-
-  // ── Agregar otra hora ──────────────────────────────────
-  // Vuelve a la misma página donde estaba el usuario
   if (buttonId === 'AGREGAR_HORA') {
-    const pagina = conv.datos.paginaHoras || 'manana';
-    await mostrarHorasDisponibles(phone, conv.datos.fecha, conv.datos.horasElegidas || [], pagina);
+    await mostrarHorasDisponibles(phone, conv.datos.fecha, conv.datos.horasElegidas || [], conv.datos.paginaHoras || 'manana', ctx);
     return;
   }
 
-  // ── Finalizar selección de horas ───────────────────────
+  // ── Finalizar selección de horas ──────────────────────
   if (buttonId === 'FINALIZAR_HORAS') {
-    const datos = conv.datos;
+    const datos        = conv.datos;
     const horasElegidas = datos.horasElegidas || [];
+    const precio       = cfg(ctx, 'precio_hora', 50);
+    const descuento    = cfg(ctx, 'descuento_pago', 0.5);
 
     if (horasElegidas.length === 0) {
-      await enviarTexto(phone, `❌ No has seleccionado ninguna hora. Elige al menos una:`);
-      await mostrarHorasDisponibles(phone, datos.fecha, []);
+      await enviarTexto(phone, `❌ No has seleccionado ninguna hora. Elige al menos una:`, ctx);
+      await mostrarHorasDisponibles(phone, datos.fecha, [], 'manana', ctx);
       return;
     }
 
-    const totalHoras = horasElegidas.length;
-    const costoTotal = totalHoras * PRECIO_HORA;
-    const montoReserva = costoTotal * DESCUENTO_PAGO;
+    const costoTotal   = horasElegidas.length * precio;
+    const montoReserva = costoTotal * descuento;
+    await setEstado(phone, 'CONFIRMANDO_RESERVA', { costoTotal, montoReserva }, botId);
 
-    await setEstado(phone, 'CONFIRMANDO_RESERVA', { costoTotal, montoReserva });
-
-    const d = await getEstado(phone);
-
+    const d = await getEstado(phone, botId);
     const resumen =
       `📋 *RESUMEN DE RESERVA*\n` +
       `─────────────────────\n` +
@@ -655,245 +479,137 @@ async function procesarBoton(phone, buttonId, conv) {
       `🏟️ Cancha: ${d.datos.tipoCancha}\n` +
       `📅 Fecha: ${d.datos.fechaNombre} (${d.datos.fechaDisplay})\n` +
       `⏰ Hora(s): ${horasElegidas.join(', ')}\n` +
-      `🕐 Total horas: ${totalHoras}\n` +
+      `🕐 Total horas: ${horasElegidas.length}\n` +
       `─────────────────────\n` +
       `💰 Costo total: *S/. ${costoTotal}*\n` +
-      `✅ *Adelanto 50%: S/. ${montoReserva}*\n` +
-      `─────────────────────\n\n` +
-      `¿Confirmas la reserva?`;
+      `✅ *Adelanto ${descuento * 100}%: S/. ${montoReserva}*\n` +
+      `─────────────────────\n\n¿Confirmas la reserva?`;
 
     await enviarBotones(phone, '📋 Confirmar Reserva', resumen, [
       { id: 'CONFIRMAR_SI', title: '✅ Sí, confirmar' },
       { id: 'CONFIRMAR_NO', title: '❌ Cancelar' }
-    ]);
+    ], ctx);
     return;
   }
 
-  // ── Confirmar SÍ ───────────────────────────────────────
+  // ── Confirmar SÍ ──────────────────────────────────────
   if (buttonId === 'CONFIRMAR_SI') {
-    const datos = conv.datos;
-    const reservaId = await crearReserva(phone, datos);
-    await setEstado(phone, 'ESPERANDO_COMPROBANTE', { reservaId });
+    const datos      = conv.datos;
+    const reservaId  = await crearReserva(phone, datos, botId);
+    await setEstado(phone, 'ESPERANDO_COMPROBANTE', { reservaId }, botId);
     await registrarPagoPendiente(reservaId, phone, 10);
 
-    // Timer en memoria (10 min)
     pagosPendientes[reservaId] = {
       phone,
       timer: setTimeout(async () => {
         const reserva = await getReserva(reservaId);
         if (reserva && reserva.estado === 'PENDIENTE_PAGO') {
           await actualizarReserva(reservaId, { estado: 'CANCELADA_TIMEOUT' });
-          await resetEstado(phone);
+          await resetEstado(phone, botId);
           await eliminarPagoPendiente(reservaId);
           await enviarTexto(phone,
-            `⏰ *Reserva cancelada automáticamente*\n\n` +
-            `No recibimos tu comprobante en 10 minutos.\n\n` +
-            `Escribe *MENU* para hacer una nueva reserva. 😊`
+            `⏰ *Reserva cancelada*\n\nNo recibimos tu comprobante en 10 minutos.\n\nEscribe *MENU* para una nueva reserva. 😊`, ctx
           );
         }
         delete pagosPendientes[reservaId];
       }, 10 * 60 * 1000)
     };
 
-    // Instrucciones de pago
-    const mensajePago = getMensajePago(
-      reservaId, datos.montoReserva,
-      `${datos.nombres} ${datos.apellidos}`
-    );
-    await enviarTexto(phone,
-      `🎉 *¡Reserva registrada!*\n\n📋 ID: *${reservaId}*\n\nAhora realiza el pago:`
-    );
-    await enviarTexto(phone, mensajePago);
+    const mensajePago = getMensajePago(reservaId, datos.montoReserva, `${datos.nombres} ${datos.apellidos}`);
+    await enviarTexto(phone, `🎉 *¡Reserva registrada!*\n\n📋 ID: *${reservaId}*\n\nAhora realiza el pago:`, ctx);
+    await enviarTexto(phone, mensajePago, ctx);
 
-    // QR Yape si está configurado
     const qrUrl = getUrlQRYape();
-    if (qrUrl) {
-      await enviarImagen(phone, qrUrl,
-        `📱 QR Yape · ${reservaId} · S/. ${datos.montoReserva}`
-      );
-    }
+    if (qrUrl) await enviarImagen(phone, qrUrl, `📱 QR Yape · ${reservaId} · S/. ${datos.montoReserva}`, ctx);
 
-    await enviarTexto(phone,
-      `📝 Escríbenos tu *número de operación* ahora 👇\n\n` +
-      `_(Luego envía la captura del comprobante)_`
-    );
+    await enviarTexto(phone, `📝 Escríbenos tu *número de operación* ahora 👇\n\n_(Luego envía la captura del comprobante)_`, ctx);
     return;
   }
 
-  // ── Confirmar NO ───────────────────────────────────────
   if (buttonId === 'CONFIRMAR_NO') {
-    await resetEstado(phone);
-    await enviarTexto(phone,
-      `❌ Reserva cancelada. ¡Sin problema! 😊\n\nEscribe *MENU* cuando quieras intentar de nuevo.`
-    );
+    await resetEstado(phone, botId);
+    await enviarTexto(phone, `❌ Reserva cancelada. ¡Sin problema! 😊\n\nEscribe *MENU* cuando quieras intentar de nuevo.`, ctx);
     return;
   }
-
-  // ── Admin: aprobar ─────────────────────────────────────
-  if (buttonId === 'PAGO_APROBADO') {
-    await _aprobarReserva(phone, conv.datos?.reservaId);
-    return;
-  }
-
-  if (buttonId === 'PAGO_RECHAZADO') {
-    await _rechazarReserva(phone, conv.datos?.reservaId);
-    return;
-  }
-}
-
-// ─── HELPERS ADMIN ────────────────────────────────────────
-async function _aprobarReserva(adminPhone, reservaId) {
-  if (!reservaId) return;
-  const reserva = await getReserva(reservaId);
-  if (!reserva) return;
-
-  if (pagosPendientes[reservaId]?.timer) {
-    clearTimeout(pagosPendientes[reservaId].timer);
-    delete pagosPendientes[reservaId];
-  }
-  await eliminarPagoPendiente(reservaId);
-  await actualizarReserva(reservaId, { estado: 'CONFIRMADA' });
-  
-  // Intentar reservar slots de forma ATÓMICA (evita race condition)
-  const horas = reserva.horasElegidas || reserva.horas;
-  const todasReservadas = await Promise.all(
-    horas.map(hora => intentarReservarSlot(reserva.fecha, hora, reservaId))
-  );
-  
-  if (!todasReservadas.every(r => r)) {
-    // Alguna hora ya fue tomada por otro usuario
-    await actualizarReserva(reservaId, { estado: 'CANCELADA_SLOTS_OCUPADOS' });
-    await enviarTexto(reserva.phone,
-      `❌ *Lo sentimos, no pudimos confirmar.*\n\n` +
-      `Algunas de tus horas fueron reservadas por otro usuario justo en este momento.\n\n` +
-      `*Por favor tu dinero será reembolsado automáticamente.*\n\n` +
-      `Escribe *MENU* para intentar con otras horas. 😊`
-    );
-    return;
-  }
-  
-  await resetEstado(adminPhone);
-
-  await enviarTexto(reserva.phone,
-    `🎉 *¡RESERVA CONFIRMADA!*\n\n` +
-    `✅ Tu pago fue verificado.\n\n` +
-    `📋 ${reservaId}\n🏟️ ${reserva.tipoCancha}\n` +
-    `📅 ${reserva.fechaDisplay}\n⏰ ${(reserva.horasElegidas || reserva.horas)?.join(', ')}\n\n` +
-    `¡Te esperamos! ⚽🌿`
-  );
-}
-
-async function _rechazarReserva(adminPhone, reservaId) {
-  if (!reservaId) return;
-  const reserva = await getReserva(reservaId);
-  if (!reserva) return;
-
-  await actualizarReserva(reservaId, { estado: 'RECHAZADA' });
-  await resetEstado(adminPhone);
-  await enviarTexto(reserva.phone,
-    `❌ *Pago rechazado*\n\n` +
-    `No pudimos confirmar tu pago de la reserva ${reservaId}.\n\n` +
-    `Escribe *MENU* para intentar de nuevo. 😊`
-  );
 }
 
 // ─── PROCESAR IMAGEN ─────────────────────────────────────
-export async function procesarImagen(phone, imageId) {
-  const conv = await getEstado(phone);
+export async function procesarImagen(phone, imageId, ctx = {}) {
+  const botId = ctx.botId || 'default';
+  const conv  = await getEstado(phone, botId);
 
   if (['PAGO_EN_REVISION', 'ESPERANDO_COMPROBANTE'].includes(conv.estado)) {
     const reservaId = conv.datos.reservaId;
     await actualizarReserva(reservaId, { comprobanteImageId: imageId, estado: 'EN_REVISION' });
-    await setEstado(phone, 'PAGO_EN_REVISION');
+    await setEstado(phone, 'PAGO_EN_REVISION', {}, botId);
 
-    const reserva = await getReserva(reservaId);
-    const msgAdmin =
+    const reserva   = await getReserva(reservaId);
+    const adminPhone = ctx.config?.admin_phone || process.env.ADMIN_PHONE;
+    const msgAdmin  =
       `🔔 *NUEVO PAGO PARA REVISAR*\n\n` +
       `📋 *${reservaId}*\n` +
       `👤 ${reserva?.nombres} ${reserva?.apellidos}\n` +
-      `🪪 DNI: ${reserva?.dni}\n` +
-      `📱 Tel: ${phone}\n` +
-      `🏟️ ${reserva?.tipoCancha}\n` +
-      `📅 ${reserva?.fechaDisplay}\n` +
+      `🪪 DNI: ${reserva?.dni}\n📱 Tel: ${phone}\n` +
+      `🏟️ ${reserva?.tipoCancha}\n📅 ${reserva?.fechaDisplay}\n` +
       `⏰ ${(reserva?.horasElegidas || reserva?.horas)?.join(', ')}\n` +
       `💰 Adelanto: S/. ${reserva?.montoReserva}\n` +
-      `🔢 Op: ${reserva?.numeroper || 'Pendiente'}\n\n` +
+      `🔢 Op: ${reserva?.numeroOperacion || 'Pendiente'}\n\n` +
       `✅ APROBAR_${reservaId}\n❌ RECHAZAR_${reservaId}`;
 
-    await enviarTexto(process.env.ADMIN_PHONE, msgAdmin);
+    await enviarTexto(adminPhone, msgAdmin, ctx);
     await enviarTexto(phone,
-      `📸 *¡Comprobante recibido!*\n\n` +
-      `⏳ Nuestro personal lo está revisando.\nTe avisamos pronto. 🙏`
+      `📸 *¡Comprobante recibido!*\n\n⏳ Nuestro personal lo está revisando.\nTe avisamos pronto. 🙏`, ctx
     );
   } else {
-    await enviarTexto(phone,
-      `📸 Imagen recibida. 😊\nEscribe *MENU* para ver opciones.`
-    );
+    await enviarTexto(phone, `📸 Imagen recibida. 😊\nEscribe *MENU* para ver opciones.`, ctx);
   }
 }
 
 // ─── COMANDOS ADMIN ───────────────────────────────────────
-export async function procesarComandoAdmin(phone, mensaje) {
-  if (phone !== process.env.ADMIN_PHONE) return false;
+export async function procesarComandoAdmin(phone, mensaje, ctx = {}) {
+  const adminPhone = ctx.config?.admin_phone || process.env.ADMIN_PHONE;
+  if (phone !== adminPhone) return false;
 
+  const botId  = ctx.botId || 'default';
   const aprobar = mensaje.match(/^APROBAR_(RES-\d+)$/i);
   const rechazar = mensaje.match(/^RECHAZAR_(RES-\d+)$/i);
 
   if (aprobar) {
     const reservaId = aprobar[1].toUpperCase();
-    const reserva = await getReserva(reservaId);
-    if (!reserva) {
-      await enviarTexto(phone, `❌ Reserva ${reservaId} no encontrada.`);
-      return true;
-    }
-    if (pagosPendientes[reservaId]?.timer) {
-      clearTimeout(pagosPendientes[reservaId].timer);
-      delete pagosPendientes[reservaId];
-    }
+    const reserva   = await getReserva(reservaId);
+    if (!reserva) { await enviarTexto(phone, `❌ Reserva ${reservaId} no encontrada.`, ctx); return true; }
+
+    if (pagosPendientes[reservaId]?.timer) { clearTimeout(pagosPendientes[reservaId].timer); delete pagosPendientes[reservaId]; }
     await eliminarPagoPendiente(reservaId);
     await actualizarReserva(reservaId, { estado: 'CONFIRMADA' });
-    
-    // Intentar reservar slots de forma ATÓMICA (evita race condition)
+
     const horas = reserva.horasElegidas || reserva.horas;
-    const todasReservadas = await Promise.all(
-      horas.map(hora => intentarReservarSlot(reserva.fecha, hora, reservaId))
-    );
-    
-    if (!todasReservadas.every(r => r)) {
-      // Alguna hora ya fue tomada por otro usuario
+    const todasReservadas = await Promise.all(horas.map(h => intentarReservarSlot(reserva.fecha, h, reservaId, botId)));
+
+    if (!todasReservadas.every(Boolean)) {
       await actualizarReserva(reservaId, { estado: 'CANCELADA_SLOTS_OCUPADOS' });
-      await enviarTexto(phone, `⚠️  Reserva *${reservaId}*: Algunas horas ya fueron ocupadas. CANCELADA.`);
+      await enviarTexto(phone, `⚠️ Reserva *${reservaId}*: Algunas horas ya fueron ocupadas. CANCELADA.`, ctx);
       await enviarTexto(reserva.phone,
-        `❌ *Lo sentimos, no pudimos confirmar.*\n\n` +
-        `Algunas de tus horas fueron reservadas por otro usuario.\n\n` +
-        `*Tu dinero será reembolsado automáticamente.*\n\n` +
-        `Escribe *MENU* para intentar con otras horas. 😊`
+        `❌ *Lo sentimos, no pudimos confirmar.*\n\nAlgunas horas fueron reservadas por otro usuario.\n\n*Tu dinero será reembolsado.*\n\nEscribe *MENU* para intentar de nuevo.`, ctx
       );
       return true;
     }
-    
-    await enviarTexto(phone, `✅ Reserva *${reservaId}* APROBADA.`);
+
+    await enviarTexto(phone, `✅ Reserva *${reservaId}* APROBADA.`, ctx);
     await enviarTexto(reserva.phone,
-      `🎉 *¡RESERVA CONFIRMADA!*\n\n✅ Pago verificado.\n\n` +
-      `📋 ${reservaId}\n🏟️ ${reserva.tipoCancha}\n` +
-      `📅 ${reserva.fechaDisplay}\n⏰ ${(reserva.horasElegidas || reserva.horas)?.join(', ')}\n\n` +
-      `¡Te esperamos! ⚽🌿`
+      `🎉 *¡RESERVA CONFIRMADA!*\n\n✅ Pago verificado.\n\n📋 ${reservaId}\n🏟️ ${reserva.tipoCancha}\n📅 ${reserva.fechaDisplay}\n⏰ ${horas?.join(', ')}\n\n¡Te esperamos! ⚽🌿`, ctx
     );
     return true;
   }
 
   if (rechazar) {
     const reservaId = rechazar[1].toUpperCase();
-    const reserva = await getReserva(reservaId);
-    if (!reserva) {
-      await enviarTexto(phone, `❌ Reserva ${reservaId} no encontrada.`);
-      return true;
-    }
+    const reserva   = await getReserva(reservaId);
+    if (!reserva) { await enviarTexto(phone, `❌ Reserva ${reservaId} no encontrada.`, ctx); return true; }
     await actualizarReserva(reservaId, { estado: 'RECHAZADA' });
-    await enviarTexto(phone, `❌ Reserva *${reservaId}* RECHAZADA.`);
+    await enviarTexto(phone, `❌ Reserva *${reservaId}* RECHAZADA.`, ctx);
     await enviarTexto(reserva.phone,
-      `❌ *Pago rechazado*\n\nNo pudimos confirmar tu pago de ${reservaId}.\n\n` +
-      `Escribe *MENU* para intentar de nuevo. 😊`
+      `❌ *Pago rechazado*\n\nNo pudimos confirmar tu pago de ${reservaId}.\n\nEscribe *MENU* para intentar de nuevo. 😊`, ctx
     );
     return true;
   }

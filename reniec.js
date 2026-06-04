@@ -18,7 +18,8 @@ const API_BASE = 'https://dniruc.apisperu.com/api/v1';
  * `fuente` puede ser 'bd' (vino de la base de datos) o 'api' (vino de APISPerú).
  */
 export async function buscarDNI(dni) {
-    const dniLimpio = dni.trim();
+    const dniLimpio = String(dni || '').trim();
+    if (!/^\d{8}$/.test(dniLimpio)) return null;
 
     // ── 1. Buscar en BD ──────────────────────────────────────
     try {

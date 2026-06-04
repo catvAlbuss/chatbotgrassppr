@@ -1,17 +1,22 @@
 {
-  "name": "chatbot-grass-whatsapp",
+  "name": "gespro-asist",
   "version": "2.1.0",
-  "description": "Chatbot WhatsApp para Grass Sintético con reservas, pagos y MySQL",
+  "description": "Gespro Asist para WhatsApp con reservas, pagos y MySQL",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "migrate": "node migrate.js",
+    "seed": "node seed.js",
+    "build:dashboard": "cd dashboard && npm run build"
   },
   "dependencies": {
     "axios": "^1.14.0",
+    "cors": "^2.8.6",
     "dotenv": "^16.6.1",
     "express": "^4.22.1",
+    "jsonwebtoken": "^9.0.3",
     "mysql2": "^3.18.2",
     "node-fetch": "^3.3.2",
     "openai": "^4.104.0",

@@ -1,0 +1,20 @@
+{
+  "bot_nombre": "Grass Sintético Bot",
+  "precio_hora": 50,
+  "descuento_pago": 0.5,
+  "timeout_pago_minutos": 10,
+  "horarios": {
+    "apertura": "07:00",
+    "cierre": "22:00"
+  },
+  "pagos": {
+    "yape": "",
+    "plin": "",
+    "titular": ""
+  },
+  "mensajes": {
+    "bienvenida": "¡Bienvenido al sistema de reservas de Grass Sintético!",
+    "pago_confirmado": "¡Tu reserva ha sido confirmada! ¡Te esperamos!",
+    "pago_rechazado": "No pudimos confirmar tu pago. Por favor intenta de nuevo."
+  }
+}
