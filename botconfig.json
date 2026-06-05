@@ -1,5 +1,6 @@
 {
   "bot_nombre": "Grass Sintético Bot",
+  "tipo": "grass",
   "precio_hora": 50,
   "descuento_pago": 0.5,
   "timeout_pago_minutos": 10,
