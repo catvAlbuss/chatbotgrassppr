@@ -177,6 +177,8 @@ async function run() {
       [`ALTER TABLE \`bots\` ADD COLUMN \`nombre_verificado\` VARCHAR(100) NULL`,       'bots.nombre_verificado'],
       [`ALTER TABLE \`bots\` ADD UNIQUE KEY \`uniq_phone_number_id\` (\`phone_number_id\`)`, 'bots UNIQUE phone_number_id'],
       [`ALTER TABLE \`conversaciones\` ADD COLUMN \`bot_id\` VARCHAR(30) NOT NULL DEFAULT 'default'`, 'conversaciones.bot_id'],
+      [`ALTER TABLE \`reservas\` ADD COLUMN \`bot_id\` VARCHAR(30) NOT NULL DEFAULT 'default'`, 'reservas.bot_id'],
+      [`ALTER TABLE \`slots_ocupados\` ADD COLUMN \`bot_id\` VARCHAR(30) NOT NULL DEFAULT 'default'`, 'slots_ocupados.bot_id'],
     ];
     for (const [sql, label] of alters) {
       try {

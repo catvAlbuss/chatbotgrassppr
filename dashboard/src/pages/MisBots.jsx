@@ -447,8 +447,8 @@ function BotModal({ bot, onClose, onSaved }) {
               </div>
 
               <div>
-                <label className="label">Tu WhatsApp (para recibir alertas de pagos) *</label>
-                <input className="input" required value={form.admin_phone} onChange={e => set('admin_phone', e.target.value)} placeholder="51999888777" />
+                <label className="label">Tu WhatsApp (para recibir alertas de pagos){isNew && ' *'}</label>
+                <input className="input" required={isNew} value={form.admin_phone} onChange={e => set('admin_phone', e.target.value)} placeholder="51999888777" />
                 <p className="text-xs text-gray-600 mt-1">Formato: código de país + número sin espacios (ej: 51999888777)</p>
               </div>
 
@@ -477,6 +477,30 @@ function BotModal({ bot, onClose, onSaved }) {
                   <div>
                     <label className="label">Titular de la cuenta Yape</label>
                     <input className="input" value={form.config?.pagos?.titular || ''} onChange={e => setCfg('pagos', { ...form.config?.pagos, titular: e.target.value })} placeholder="Juan Pérez" />
+                  </div>
+                </>
+              )}
+
+              {!isNew && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">Plan</label>
+                      <select className="input" value={form.plan} onChange={e => set('plan', e.target.value)}>
+                        <option value="demo">Demo</option>
+                        <option value="mensual">Mensual</option>
+                        <option value="anual">Anual</option>
+                        <option value="lifetime">De por vida</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Vence el</label>
+                      <input className="input" type="date" value={form.plan_expira} onChange={e => set('plan_expira', e.target.value)} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="label">Inicio del plan</label>
+                    <input className="input" type="date" value={form.plan_inicio} onChange={e => set('plan_inicio', e.target.value)} />
                   </div>
                 </>
               )}

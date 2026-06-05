@@ -26,7 +26,7 @@ async function resolverCtx(phoneNumberId) {
   if (!phoneNumberId) return CTX_DEFAULT;
   try {
     const bot = await queryOne(
-      'SELECT id, config, waba_token, phone_number_id FROM bots WHERE phone_number_id = ? AND activo = 1',
+      'SELECT * FROM bots WHERE phone_number_id = ? AND activo = 1',
       [phoneNumberId]
     );
     if (!bot) return CTX_DEFAULT;
