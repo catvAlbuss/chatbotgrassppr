@@ -6,6 +6,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { procesarMensaje, procesarImagen, procesarComandoAdmin, mostrarUbiCercanas } from './flujo.js';
 import { verificarConexionDB, query, queryOne } from './db.js';
@@ -70,9 +71,15 @@ app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // ─── LANDING PAGE PÚBLICA (sin login) ────────────────────
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'), err => {
-    if (err) res.status(200).json({ status: 'ok', bot: 'gespro-asist v2.2', uptime: Math.floor(process.uptime()) });
-  });
+  const filePath = path.join(__dirname, 'public', 'index.html');
+  try {
+    const contactPhone = process.env.CONTACT_PHONE || '51959422042';
+    const html = fs.readFileSync(filePath, 'utf8').replaceAll('{{CONTACT_PHONE}}', contactPhone);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch {
+    res.status(200).json({ status: 'ok', bot: 'gespro-asist v2.2', uptime: Math.floor(process.uptime()) });
+  }
 });
 
 // ─── HEALTHCHECK ─────────────────────────────────────────

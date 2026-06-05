@@ -1,5 +1,7 @@
 import { Check, Zap, Shield, Crown, MessageCircle, Star } from 'lucide-react'
 
+const CONTACT = import.meta.env.VITE_CONTACT_PHONE || '51959422042'
+
 const PLANES = [
   {
     id: 'mensual',
@@ -19,7 +21,7 @@ const PLANES = [
       'Actualizaciones incluidas',
     ],
     cta: 'Contratar mensual',
-    href: 'https://wa.me/51999999999?text=Hola%2C%20quiero%20contratar%20el%20plan%20mensual%20de%20Gespro%20Asist%20(S%2F.%2050%2Fmes)',
+    href: `https://wa.me/${CONTACT}?text=Hola%2C%20quiero%20contratar%20el%20plan%20mensual%20de%20Gespro%20Asist%20(S%2F.%2050%2Fmes)`,
   },
   {
     id: 'anual',
@@ -41,7 +43,7 @@ const PLANES = [
       'Backup automático de datos',
     ],
     cta: 'Contratar anual',
-    href: 'https://wa.me/51999999999?text=Hola%2C%20quiero%20contratar%20el%20plan%20anual%20de%20Gespro%20Asist%20(S%2F.%20500%2Fa%C3%B1o)',
+    href: `https://wa.me/${CONTACT}?text=Hola%2C%20quiero%20contratar%20el%20plan%20anual%20de%20Gespro%20Asist%20(S%2F.%20500%2Fa%C3%B1o)`,
   },
   {
     id: 'lifetime',
@@ -62,7 +64,7 @@ const PLANES = [
       'SLA garantizado',
     ],
     cta: 'Solicitar asesoría',
-    href: 'https://wa.me/51999999999?text=Hola%2C%20quiero%20informaci%C3%B3n%20sobre%20el%20plan%20empresarial%20de%20Gespro%20Asist',
+    href: `https://wa.me/${CONTACT}?text=Hola%2C%20quiero%20informaci%C3%B3n%20sobre%20el%20plan%20empresarial%20de%20Gespro%20Asist`,
   },
 ]
 
@@ -175,7 +177,7 @@ export function Planes() {
           Conversamos por WhatsApp y encontramos la solución ideal para tu negocio.
         </p>
         <a
-          href="https://wa.me/51999999999?text=Hola%2C%20quiero%20saber%20más%20sobre%20Gespro%20Asist"
+          href={`https://wa.me/${CONTACT}?text=Hola%2C%20quiero%20saber%20más%20sobre%20Gespro%20Asist`}
           target="_blank"
           rel="noopener noreferrer"
           className="btn-secondary inline-flex items-center gap-2 text-sm"
