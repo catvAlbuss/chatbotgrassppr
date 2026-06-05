@@ -457,7 +457,7 @@ async function procesarBoton(phone, buttonId, conv, ctx) {
   }
 
   // ── Fecha seleccionada del picker interactivo ─────────────
-  const _matchFechaDia = buttonId.match(/^FECHA_DIA_(d+)$/);
+  const _matchFechaDia = buttonId.match(/^FECHA_DIA_(\d+)$/);
   if (_matchFechaDia) {
     const _dias  = parseInt(_matchFechaDia[1]);
     const _fecha = new Date();
@@ -474,29 +474,22 @@ async function procesarBoton(phone, buttonId, conv, ctx) {
         await mostrarBotonesFecha(phone, ctx, true);
       } else {
         await enviarTexto(phone,
-          `📅 *Disponibilidad ${_nombre} (${_display}):*
-
-` +
-          disponibles.map(h => `✅ ${h}`).join('
-') +
-          `
-
-Para *reservar*, escribe *MENU* y elige Reservar. 😊`, ctx
+          `📅 *Disponibilidad ${_nombre} (${_display}):*\n\n` +
+          disponibles.map(h => `✅ ${h}`).join('\n') +
+          `\n\nPara *reservar*, escribe *MENU* y elige Reservar. 😊`, ctx
         );
       }
     } else {
       await setEstado(phone, 'ESPERANDO_HORA', {
         fecha: _fKey, fechaDisplay: _display, fechaNombre: _nombre, horasElegidas: []
       }, botId);
-      await enviarTexto(phone, `📅 *${_nombre} (${_display})* — ¡Perfecto! 🗓️
-
-Elige tu(s) hora(s) 👇`, ctx);
+      await enviarTexto(phone, `📅 *${_nombre} (${_display})* — 🎉\n\nElige tu(s) hora(s) 👇`, ctx);
       await mostrarHorasDisponibles(phone, _fKey, [], 'manana', ctx);
     }
     return;
   }
 
-  // ── Hora seleccionada ─────────────────────────────────
+    // ── Hora seleccionada ─────────────────────────────────
   if (buttonId.startsWith('HORA_')) {
     const horaNum = buttonId.replace('HORA_', '');
     const hora    = horaNum.length === 4
