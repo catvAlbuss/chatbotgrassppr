@@ -18,7 +18,7 @@ import {
 } from './storage.js';
 import { buscarDNI, guardarPersonaManual } from './reniec.js';
 import {
-  esSaludo, parsearFechaNatural, formatearFecha, fechaKey,
+  esSaludo, parsearFechaNatural, parsearFechaYHora, formatearFecha, fechaKey,
   nombreFecha, esFormatoDNI, extraerHoraDeTexto, normalizar
 } from './lenguaje.js';
 
@@ -168,6 +168,39 @@ async function _enviarListaHoras(phone, turno, disponibles, horasElegidas, titul
   );
 }
 
+// ─── SELECCIÓN INTERACTIVA DE FECHA ────────────────────────
+async function mostrarBotonesFecha(phone, ctx, consulta = false) {
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const DIAS_ABR  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const MESES_ABR = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const rows = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(hoy);
+    d.setDate(hoy.getDate() + i);
+    const etiqueta = i === 0 ? '📅 Hoy'
+                   : i === 1 ? '📅 Mañana'
+                   : i === 2 ? '📅 Pasado mañana'
+                   : `📅 ${DIAS_ABR[d.getDay()]} ${d.getDate()} ${MESES_ABR[d.getMonth()]}`;
+    rows.push({ id: `FECHA_DIA_${i}`, title: etiqueta, description: formatearFecha(d) });
+  }
+  const pregunta = consulta
+    ? '🗓️ *¿Para qué fecha quieres ver disponibilidad?*'
+    : '📅 *¿Para qué fecha quieres reservar?*';
+  await enviarLista(
+    phone,
+    consulta ? '🗓️ Ver disponibilidad' : '📅 Elige la fecha',
+    `${pregunta}
+
+Elige del menú 👇
+
+_O escribe: hoy, mañana, DD/MM/AAAA_`,
+    'Ver fechas',
+    [{ title: '📆 Próximas fechas', rows }],
+    ctx
+  );
+}
+
 // ─── PROCESAR MENSAJE PRINCIPAL ──────────────────────────
 export async function procesarMensaje(phone, mensaje, tipo = 'text', ctx = {}) {
   const botId = ctx.botId || 'default';
@@ -242,23 +275,22 @@ export async function procesarMensaje(phone, mensaje, tipo = 'text', ctx = {}) {
       }
       await setEstado(phone, 'ESPERANDO_FECHA', { apellidos: apellido }, botId);
       await guardarPersonaManual(conv.datos.dni, conv.datos.nombres, apellido);
-      await enviarTexto(phone,
-        `✅ Perfecto, *${conv.datos.nombres} ${apellido}*. 👋\n\n` +
-        `📅 *¿Para qué fecha quieres reservar?*\n\n` +
-        `• _hoy_ · _mañana_ · _pasado mañana_\n• O: *DD/MM/AAAA*`, ctx
-      );
+      await enviarTexto(phone, `✅ Perfecto, *${conv.datos.nombres} ${apellido}*. 👋`, ctx);
+      await mostrarBotonesFecha(phone, ctx);
       break;
     }
 
     case 'ESPERANDO_FECHA': {
-      const fechaObj  = parsearFechaNatural(mensaje);
+      const { fecha: fechaObj } = parsearFechaYHora(mensaje);
       const hoyInicio = new Date(); hoyInicio.setHours(0, 0, 0, 0);
       if (!fechaObj || isNaN(fechaObj)) {
-        await enviarTexto(phone, `😅 No entendí esa fecha.\n\nPrueba: *hoy*, *mañana* o *DD/MM/AAAA*`, ctx);
+        await enviarTexto(phone, `😅 No encontré la fecha. Elige del menú 👇`, ctx);
+        await mostrarBotonesFecha(phone, ctx);
         return;
       }
       if (fechaObj < hoyInicio) {
-        await enviarTexto(phone, `❌ Esa fecha ya pasó. Elige una *de hoy en adelante*:`, ctx);
+        await enviarTexto(phone, `❌ Esa fecha ya pasó. Elige una *de hoy en adelante* 👇`, ctx);
+        await mostrarBotonesFecha(phone, ctx);
         return;
       }
       const fKey = fechaKey(fechaObj);
@@ -395,7 +427,7 @@ async function procesarBoton(phone, buttonId, conv, ctx) {
 
   if (buttonId === 'RESERVAR')       { await mostrarProductos(phone, ctx); return; }
   if (buttonId === 'CONSULTAR')      { await setEstado(phone, 'CONSULTANDO', {}, botId); await enviarTexto(phone, '💬 ¡Con gusto! ¿En qué puedo ayudarte?', ctx); return; }
-  if (buttonId === 'VER_DISPONIBLE') { await setEstado(phone, 'ESPERANDO_FECHA_CONSULTA', {}, botId); await enviarTexto(phone, `📅 *¿Para qué fecha?*\n\nEscribe: *hoy*, *mañana* o *DD/MM/AAAA*`, ctx); return; }
+  if (buttonId === 'VER_DISPONIBLE') { await setEstado(phone, 'ESPERANDO_FECHA_CONSULTA', {}, botId); await mostrarBotonesFecha(phone, ctx, true); return; }
 
   // ── Tipo de cancha dinámico ──────────────────────────
   // Soporta IDs legacy (TIPO_FUTBOL etc.) y nuevos (TIPO_0, TIPO_1, TIPO_2)
@@ -421,6 +453,46 @@ async function procesarBoton(phone, buttonId, conv, ctx) {
   if (buttonId === 'PAGINA_TARDE' || buttonId === 'PAGINA_MANANA') {
     const pagina = buttonId === 'PAGINA_TARDE' ? 'tarde' : 'manana';
     await mostrarHorasDisponibles(phone, conv.datos.fecha, conv.datos.horasElegidas || [], pagina, ctx);
+    return;
+  }
+
+  // ── Fecha seleccionada del picker interactivo ─────────────
+  const _matchFechaDia = buttonId.match(/^FECHA_DIA_(d+)$/);
+  if (_matchFechaDia) {
+    const _dias  = parseInt(_matchFechaDia[1]);
+    const _fecha = new Date();
+    _fecha.setHours(0, 0, 0, 0);
+    _fecha.setDate(_fecha.getDate() + _dias);
+    const _fKey    = fechaKey(_fecha);
+    const _nombre  = nombreFecha(_fecha);
+    const _display = formatearFecha(_fecha);
+
+    if (conv.estado === 'ESPERANDO_FECHA_CONSULTA') {
+      const disponibles = await getSlotsDisponibles(_fKey, botId);
+      if (disponibles.length === 0) {
+        await enviarTexto(phone, `😔 No hay horarios para *${_nombre} (${_display})*. Prueba otra fecha 👇`, ctx);
+        await mostrarBotonesFecha(phone, ctx, true);
+      } else {
+        await enviarTexto(phone,
+          `📅 *Disponibilidad ${_nombre} (${_display}):*
+
+` +
+          disponibles.map(h => `✅ ${h}`).join('
+') +
+          `
+
+Para *reservar*, escribe *MENU* y elige Reservar. 😊`, ctx
+        );
+      }
+    } else {
+      await setEstado(phone, 'ESPERANDO_HORA', {
+        fecha: _fKey, fechaDisplay: _display, fechaNombre: _nombre, horasElegidas: []
+      }, botId);
+      await enviarTexto(phone, `📅 *${_nombre} (${_display})* — ¡Perfecto! 🗓️
+
+Elige tu(s) hora(s) 👇`, ctx);
+      await mostrarHorasDisponibles(phone, _fKey, [], 'manana', ctx);
+    }
     return;
   }
 
