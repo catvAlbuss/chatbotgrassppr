@@ -309,7 +309,7 @@ export async function procesarMensaje(phone, mensaje, tipo = 'text', ctx = {}) {
 
     case 'CONSULTANDO': {
       const historial  = conv.historial || [];
-      const respuesta  = await preguntarIA(historial, mensaje);
+      const respuesta  = await preguntarIA(historial, mensaje, ctx.config || {});
       await agregarHistorial(phone, 'user',      mensaje,   botId);
       await agregarHistorial(phone, 'assistant', respuesta, botId);
       await enviarTexto(phone, respuesta, ctx);
