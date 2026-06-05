@@ -58,6 +58,13 @@ export async function verificarConexionDB() {
         console.error('[ERR] MySQL ERROR:', err.message);
         console.error('   Host:', cfg.host, '| DB:', cfg.database, '| User:', cfg.user);
         console.error('   DB_PASSWORD length:', cfg.password ? String(cfg.password).length : 0);
+        if (err.code === 'ER_ACCESS_DENIED_ERROR') {
+            console.error('   ⚠️  Verifica DB_USER y DB_PASSWORD en tu .env');
+        } else if (err.code === 'ER_BAD_DB_ERROR') {
+            console.error('   ⚠️  La base de datos no existe. Créala en phpMyAdmin y ejecuta: npm run migrate');
+        } else if (err.code === 'ECONNREFUSED') {
+            console.error('   ⚠️  MySQL no está corriendo o el HOST/PORT es incorrecto');
+        }
         return false; // No crashear - el bot puede funcionar sin BD (con degradacion)
     }
 }

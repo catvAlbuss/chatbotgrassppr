@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gespro Asist - Automatiza tu negocio en WhatsApp</title>
+  <meta name="description" content="Chatbot de WhatsApp para reservas, pagos Yape/Plin y gestión de clientes. Para grass sintético, comercios y restaurantes en Perú." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { 400:'#34d399', 500:'#10b981', 600:'#059669' }
+          },
+          fontFamily: { sans: ['Inter','system-ui','sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background:#030712; color:#f1f5f9; font-family:'Inter',sans-serif; }
+    .glow { box-shadow: 0 0 80px rgba(16,185,129,.15); }
+    .card-hover { transition: transform .2s, box-shadow .2s; }
+    .card-hover:hover { transform:translateY(-4px); box-shadow:0 20px 60px rgba(16,185,129,.12); }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+    .float { animation: float 3s ease-in-out infinite; }
+    .gradient-text { background: linear-gradient(135deg,#10b981,#34d399,#6ee7b7); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="sticky top-0 z-50 bg-gray-950/80 backdrop-blur border-b border-gray-800">
+  <div class="max-w-6xl mx-auto px-4 py-3.5 flex items-center justify-between">
+    <div class="flex items-center gap-2.5">
+      <div class="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center text-white font-bold text-sm">G</div>
+      <span class="font-semibold text-gray-100">Gespro Asist</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <a href="#planes" class="text-sm text-gray-400 hover:text-gray-200 transition-colors hidden sm:block">Planes</a>
+      <a href="/admin" class="text-sm bg-gray-800 hover:bg-gray-700 text-gray-200 px-4 py-1.5 rounded-lg transition-colors">Panel Admin</a>
+      <a href="https://wa.me/51999999999?text=Hola%2C%20quiero%20contratar%20Gespro%20Asist" target="_blank"
+         class="text-sm bg-brand-500 hover:bg-brand-600 text-white px-4 py-1.5 rounded-lg transition-colors font-medium">
+        Contratar
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="max-w-6xl mx-auto px-4 pt-20 pb-16 text-center">
+  <div class="inline-flex items-center gap-2 bg-brand-500/10 border border-brand-500/20 text-brand-400 text-xs font-medium px-3 py-1.5 rounded-full mb-6">
+    <span class="w-1.5 h-1.5 bg-brand-400 rounded-full animate-pulse"></span>
+    Disponible en Perú · Pagos con Yape y Plin
+  </div>
+  <h1 class="text-4xl sm:text-5xl md:text-6xl font-extrabold text-gray-100 leading-tight mb-6">
+    Tu negocio automatizado<br />
+    <span class="gradient-text">en WhatsApp</span>
+  </h1>
+  <p class="text-lg text-gray-400 max-w-2xl mx-auto mb-10">
+    Reservas, pedidos y pagos en piloto automático. Tu bot atiende 24/7, cobra por Yape o Plin y tú solo apruebas desde el panel.
+  </p>
+  <div class="flex flex-wrap items-center justify-center gap-3">
+    <a href="https://wa.me/51999999999?text=Hola%2C%20quiero%20una%20demo%20de%20Gespro%20Asist" target="_blank"
+       class="inline-flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white font-semibold px-6 py-3 rounded-xl transition-colors shadow-lg shadow-brand-500/20">
+      <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+      Solicitar demo gratis
+    </a>
+    <a href="#planes" class="inline-flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-200 font-semibold px-6 py-3 rounded-xl transition-colors">
+      Ver planes →
+    </a>
+  </div>
+
+  <!-- Stats -->
+  <div class="grid grid-cols-3 gap-4 max-w-lg mx-auto mt-14 pt-12 border-t border-gray-800">
+    <div><p class="text-2xl font-bold text-gray-100">24/7</p><p class="text-xs text-gray-500 mt-1">Atención continua</p></div>
+    <div><p class="text-2xl font-bold text-gray-100">0s</p><p class="text-xs text-gray-500 mt-1">Tiempo de respuesta</p></div>
+    <div><p class="text-2xl font-bold text-gray-100">3+</p><p class="text-xs text-gray-500 mt-1">Tipos de negocio</p></div>
+  </div>
+</section>
+
+<!-- TIPOS DE NEGOCIO -->
+<section class="max-w-6xl mx-auto px-4 py-16">
+  <div class="text-center mb-12">
+    <h2 class="text-2xl font-bold text-gray-100 mb-3">Adaptado a tu negocio</h2>
+    <p class="text-gray-400">Un bot diferente para cada tipo de emprendimiento</p>
+  </div>
+  <div class="grid md:grid-cols-3 gap-6">
+    <div class="card-hover bg-gray-900 border border-gray-800 rounded-2xl p-6">
+      <div class="w-12 h-12 rounded-xl bg-brand-500/10 flex items-center justify-center text-2xl mb-4">🌿</div>
+      <h3 class="font-semibold text-gray-100 mb-2">Grass Sintético</h3>
+      <p class="text-gray-400 text-sm leading-relaxed">Reservas de canchas por hora, selección de tipo (fútbol/vóley/evento), pago adelantado por Yape. El bot maneja todo el flujo.</p>
+      <ul class="mt-4 space-y-1.5 text-xs text-gray-500">
+        <li class="flex items-center gap-2"><span class="text-brand-400">✓</span> Reservas por horario</li>
+        <li class="flex items-center gap-2"><span class="text-brand-400">✓</span> Anti-doble reserva</li>
+        <li class="flex items-center gap-2"><span class="text-brand-400">✓</span> Pago Yape/Plin</li>
+      </ul>
+    </div>
+    <div class="card-hover bg-gray-900 border border-gray-800 rounded-2xl p-6">
+      <div class="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center text-2xl mb-4">🛍️</div>
+      <h3 class="font-semibold text-gray-100 mb-2">Comercio / Tienda</h3>
+      <p class="text-gray-400 text-sm leading-relaxed">Catálogo de productos, toma de pedidos por WhatsApp, confirmación de stock y cobro por Yape. Ideal para tiendas y bazares.</p>
+      <ul class="mt-4 space-y-1.5 text-xs text-gray-500">
+        <li class="flex items-center gap-2"><span class="text-blue-400">✓</span> Catálogo interactivo</li>
+        <li class="flex items-center gap-2"><span class="text-blue-400">✓</span> Gestión de pedidos</li>
+        <li class="flex items-center gap-2"><span class="text-blue-400">✓</span> Notificación al vendedor</li>
+      </ul>
+    </div>
+    <div class="card-hover bg-gray-900 border border-gray-800 rounded-2xl p-6">
+      <div class="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center text-2xl mb-4">🍽️</div>
+      <h3 class="font-semibold text-gray-100 mb-2">Restaurant</h3>
+      <p class="text-gray-400 text-sm leading-relaxed">Reserva de mesas, pedidos para llevar, menú del día por WhatsApp y cobro anticipado. Reduce las llamadas a cero.</p>
+      <ul class="mt-4 space-y-1.5 text-xs text-gray-500">
+        <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Reservas de mesa</li>
+        <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Pedidos delivery</li>
+        <li class="flex items-center gap-2"><span class="text-amber-400">✓</span> Menú dinámico</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- CÓMO FUNCIONA -->
+<section class="max-w-6xl mx-auto px-4 py-16">
+  <div class="text-center mb-12">
+    <h2 class="text-2xl font-bold text-gray-100 mb-3">Así de simple</h2>
+    <p class="text-gray-400">En 3 pasos tu negocio empieza a cobrar solo</p>
+  </div>
+  <div class="grid md:grid-cols-3 gap-8 relative">
+    <div class="hidden md:block absolute top-8 left-1/3 right-1/3 h-px bg-gray-800"></div>
+    <div class="text-center">
+      <div class="w-14 h-14 rounded-full bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400 font-bold text-lg mx-auto mb-4">1</div>
+      <h3 class="font-semibold text-gray-200 mb-2">Contrata tu plan</h3>
+      <p class="text-gray-500 text-sm">Elige el plan que más te conviene y contacta por WhatsApp. Activamos tu bot en 24 horas.</p>
+    </div>
+    <div class="text-center">
+      <div class="w-14 h-14 rounded-full bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400 font-bold text-lg mx-auto mb-4">2</div>
+      <h3 class="font-semibold text-gray-200 mb-2">Configura tu negocio</h3>
+      <p class="text-gray-500 text-sm">Desde el panel web ajusta precios, horarios, productos y métodos de pago. Sin código.</p>
+    </div>
+    <div class="text-center">
+      <div class="w-14 h-14 rounded-full bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400 font-bold text-lg mx-auto mb-4">3</div>
+      <h3 class="font-semibold text-gray-200 mb-2">Tu bot trabaja solo</h3>
+      <p class="text-gray-500 text-sm">Los clientes reservan y pagan 24/7. Tú solo apruebas comprobantes desde el panel.</p>
+    </div>
+  </div>
+</section>
+
+<!-- PLANES -->
+<section id="planes" class="max-w-6xl mx-auto px-4 py-20">
+  <div class="text-center mb-12">
+    <div class="inline-flex items-center gap-2 bg-brand-500/10 border border-brand-500/20 text-brand-400 text-xs font-medium px-3 py-1.5 rounded-full mb-4">
+      Precios en Soles · Sin costos ocultos
+    </div>
+    <h2 class="text-3xl font-bold text-gray-100 mb-3">Planes y Precios</h2>
+    <p class="text-gray-400">Elige el plan que mejor se adapta a tu negocio</p>
+  </div>
+
+  <div class="grid md:grid-cols-3 gap-6 items-center">
+
+    <!-- Plan Mensual -->
+    <div class="card-hover bg-gray-900 border border-gray-800 rounded-2xl p-7">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400 text-xl">⚡</div>
+        <div><p class="font-semibold text-gray-100">Mensual</p><p class="text-xs text-gray-500">Sin compromisos</p></div>
+      </div>
+      <div class="mb-6">
+        <span class="text-4xl font-extrabold text-gray-100">S/. 50</span>
+        <span class="text-gray-500 text-sm"> / mes</span>
+      </div>
+      <ul class="space-y-3 mb-8 text-sm text-gray-400">
+        <li class="flex items-center gap-2.5"><span class="text-blue-400 font-bold">✓</span> 1 bot de WhatsApp activo</li>
+        <li class="flex items-center gap-2.5"><span class="text-blue-400 font-bold">✓</span> Hasta 300 reservas/pedidos</li>
+        <li class="flex items-center gap-2.5"><span class="text-blue-400 font-bold">✓</span> Panel de administración</li>
+        <li class="flex items-center gap-2.5"><span class="text-blue-400 font-bold">✓</span> Cobro con Yape y Plin</li>
+        <li class="flex items-center gap-2.5"><span class="text-blue-400 font-bold">✓</span> Soporte por WhatsApp</li>
+      </ul>
+      <a href="https://wa.me/51999999999?text=Hola%2C%20quiero%20contratar%20el%20plan%20mensual%20de%20Gespro%20Asist%20S%2F.50%2Fmes" target="_blank"
+         class="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors">
+        Contratar mensual
+      </a>
+    </div>
+
+    <!-- Plan Anual (Destacado) -->
+    <div class="card-hover relative bg-gray-900 border-2 border-brand-500/50 rounded-2xl p-7 shadow-2xl shadow-brand-500/10 scale-105">
+      <div class="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-brand-500 text-white text-xs font-bold px-4 py-1 rounded-full">
+        ⭐ MÁS POPULAR
+      </div>
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-10 h-10 rounded-xl bg-brand-500/10 flex items-center justify-center text-brand-400 text-xl">🛡️</div>
+        <div><p class="font-semibold text-gray-100">Anual</p><p class="text-xs text-brand-400">Ahorra S/. 100 al año</p></div>
+      </div>
+      <div class="mb-6">
+        <span class="text-4xl font-extrabold text-gray-100">S/. 500</span>
+        <span class="text-gray-500 text-sm"> / año</span>
+        <div class="mt-1 text-xs text-gray-500">equivale a <span class="text-brand-400 font-medium">S/. 41.67/mes</span></div>
+      </div>
+      <ul class="space-y-3 mb-8 text-sm text-gray-400">
+        <li class="flex items-center gap-2.5"><span class="text-brand-400 font-bold">✓</span> Todo el plan Mensual</li>
+        <li class="flex items-center gap-2.5"><span class="text-brand-400 font-bold">✓</span> Reservas ilimitadas</li>
+        <li class="flex items-center gap-2.5"><span class="text-brand-400 font-bold">✓</span> Reportes y estadísticas</li>
+        <li class="flex items-center gap-2.5"><span class="text-brand-400 font-bold">✓</span> Integración con RENIEC</li>
+        <li class="flex items-center gap-2.5"><span class="text-brand-400 font-bold">✓</span> Soporte prioritario 24/7</li>
+        <li class="flex items-center gap-2.5"><span class="text-brand-400 font-bold">✓</span> Backup automático</li>
+      </ul>
+      <a href="https://wa.me/51999999999?text=Hola%2C%20quiero%20contratar%20el%20plan%20anual%20de%20Gespro%20Asist%20S%2F.500%2Fa%C3%B1o" target="_blank"
+         class="block w-full text-center bg-brand-500 hover:bg-brand-600 text-white font-semibold py-3 rounded-xl transition-colors shadow-lg shadow-brand-500/25">
+        Contratar anual
+      </a>
+    </div>
+
+    <!-- Plan Empresarial -->
+    <div class="card-hover bg-gray-900 border border-gray-800 rounded-2xl p-7">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-400 text-xl">👑</div>
+        <div><p class="font-semibold text-gray-100">De por Vida</p><p class="text-xs text-gray-500">Solución empresarial</p></div>
+      </div>
+      <div class="mb-6">
+        <span class="text-2xl font-extrabold text-gray-100">Contáctenos</span>
+        <div class="mt-1 text-xs text-gray-500">Precio a medida para tu empresa</div>
+      </div>
+      <ul class="space-y-3 mb-8 text-sm text-gray-400">
+        <li class="flex items-center gap-2.5"><span class="text-amber-400 font-bold">✓</span> Bots ilimitados</li>
+        <li class="flex items-center gap-2.5"><span class="text-amber-400 font-bold">✓</span> Múltiples sedes</li>
+        <li class="flex items-center gap-2.5"><span class="text-amber-400 font-bold">✓</span> Personalización total</li>
+        <li class="flex items-center gap-2.5"><span class="text-amber-400 font-bold">✓</span> Capacitación al equipo</li>
+        <li class="flex items-center gap-2.5"><span class="text-amber-400 font-bold">✓</span> Soporte dedicado</li>
+        <li class="flex items-center gap-2.5"><span class="text-amber-400 font-bold">✓</span> SLA garantizado</li>
+      </ul>
+      <a href="https://wa.me/51999999999?text=Hola%2C%20quiero%20informaci%C3%B3n%20sobre%20el%20plan%20empresarial%20de%20Gespro%20Asist%20para%20mi%20empresa" target="_blank"
+         class="block w-full text-center bg-amber-600 hover:bg-amber-700 text-white font-semibold py-3 rounded-xl transition-colors">
+        Solicitar asesoría empresarial
+      </a>
+    </div>
+  </div>
+
+  <p class="text-center text-gray-600 text-xs mt-8">
+    Todos los precios en Soles peruanos (S/.) · Pago por Yape o transferencia bancaria
+  </p>
+</section>
+
+<!-- FEATURES -->
+<section class="max-w-6xl mx-auto px-4 py-16 border-t border-gray-900">
+  <div class="grid sm:grid-cols-2 md:grid-cols-4 gap-6">
+    <div class="text-center p-4">
+      <div class="text-3xl mb-3">🤖</div>
+      <h4 class="font-semibold text-gray-200 mb-1">Respuesta instantánea</h4>
+      <p class="text-gray-500 text-xs">El bot atiende en segundos, sin demoras ni horarios.</p>
+    </div>
+    <div class="text-center p-4">
+      <div class="text-3xl mb-3">💳</div>
+      <h4 class="font-semibold text-gray-200 mb-1">Yape y Plin</h4>
+      <p class="text-gray-500 text-xs">Cobro directo por los métodos más usados en Perú.</p>
+    </div>
+    <div class="text-center p-4">
+      <div class="text-3xl mb-3">📊</div>
+      <h4 class="font-semibold text-gray-200 mb-1">Panel en tiempo real</h4>
+      <p class="text-gray-500 text-xs">Reservas, ingresos y clientes desde un solo lugar.</p>
+    </div>
+    <div class="text-center p-4">
+      <div class="text-3xl mb-3">🔒</div>
+      <h4 class="font-semibold text-gray-200 mb-1">Seguro y confiable</h4>
+      <p class="text-gray-500 text-xs">Datos en servidor propio, sin intermediarios.</p>
+    </div>
+  </div>
+</section>
+
+<!-- CTA FINAL -->
+<section class="max-w-6xl mx-auto px-4 py-20">
+  <div class="bg-gray-900 border border-gray-800 rounded-3xl p-10 text-center glow">
+    <p class="text-3xl font-bold text-gray-100 mb-3">
+      Empieza hoy por <span class="gradient-text">S/. 50 al mes</span>
+    </p>
+    <p class="text-gray-400 mb-8 max-w-md mx-auto">
+      Sin contratos largos. Tu bot listo en 24 horas. Cancela cuando quieras.
+    </p>
+    <a href="https://wa.me/51999999999?text=Hola%2C%20quiero%20contratar%20Gespro%20Asist%20para%20mi%20negocio" target="_blank"
+       class="inline-flex items-center gap-2.5 bg-brand-500 hover:bg-brand-600 text-white font-bold px-8 py-4 rounded-2xl transition-colors shadow-xl shadow-brand-500/20 text-lg">
+      <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+      Hablar por WhatsApp
+    </a>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="border-t border-gray-900 py-8 text-center text-gray-600 text-xs">
+  <p>Gespro Asist © 2024 · Automatización para negocios en Perú · Moneda: Soles (S/.) · Pagos: Yape · Plin</p>
+</footer>
+
+</body>
+</html>

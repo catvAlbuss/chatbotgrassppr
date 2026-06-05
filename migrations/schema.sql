@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS `personas` (
   INDEX `idx_dni` (`dni`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Ejecutar también 002_bots.sql y 003_usuarios.sql para completar el esquema.
+
 -- ─── TABLA: conversaciones ────────────────────────────────
 -- Estado actual de cada conversación por número de teléfono
 CREATE TABLE IF NOT EXISTS `conversaciones` (
