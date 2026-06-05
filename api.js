@@ -501,7 +501,7 @@ router.post('/bots/:id/verificar-conexion', auth, async (req, res) => {
     const bot = await queryOne('SELECT * FROM bots WHERE id = ?', [req.params.id]);
     if (!bot) return res.status(404).json({ error: 'Bot no encontrado' });
 
-    const token         = req.body.waba_token     || bot.waba_token;
+    const token         = req.body.waba_token     || bot.waba_token     || process.env.WHATSAPP_TOKEN;
     const phoneNumberId = req.body.phone_number_id || bot.phone_number_id;
 
     if (!token || !phoneNumberId) {

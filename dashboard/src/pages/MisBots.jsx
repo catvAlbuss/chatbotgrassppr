@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Bot, Edit2, Trash2, Power, Loader2, X, CheckCircle, Wifi, WifiOff, Clock, PhoneCall } from 'lucide-react'
+import { Plus, Bot, Edit2, Trash2, Power, Loader2, X, CheckCircle, Wifi, WifiOff, Clock, PhoneCall, MessageSquare, Link2 } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { ConectarWhatsApp } from './ConectarWhatsApp.jsx'
 
@@ -60,6 +60,7 @@ export function MisBots() {
   const [modal, setModal]     = useState(null)      // null | 'crear' | bot-object
   const [confirm, setConfirm] = useState(null)      // id a eliminar
   const [conectar, setConectar] = useState(null)    // bot a conectar
+  const [asignar, setAsignar]   = useState(null)    // bot a asignar número (admin)
 
   function cargar() {
     setLoading(true)
@@ -170,6 +171,16 @@ export function MisBots() {
                         </button>
                       )}
 
+                      {/* CTA admin: asignar número directamente */}
+                      {!yaConectado && (
+                        <button
+                          onClick={() => setAsignar(bot)}
+                          className="mt-1 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-gray-700/60 text-gray-400 border border-gray-600 hover:bg-gray-700 hover:text-gray-200 transition-colors font-medium"
+                        >
+                          <Link2 size={12} /> Asignar número
+                        </button>
+                      )}
+
                       {/* CTA: plan mensual esperando activación */}
                       {bot.plan === 'mensual' && bot.estado_conexion === 'pendiente' && (
                         <p className="text-xs text-amber-400 mt-1">
@@ -181,6 +192,16 @@ export function MisBots() {
 
                   {/* Acciones */}
                   <div className="flex items-center gap-2">
+                    {yaConectado && bot.numero_display && (
+                      <a
+                        href={`https://wa.me/${bot.numero_display.replace(/\D/g, '')}?text=Hola`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="p-2 rounded-lg text-green-400 hover:bg-green-500/10 transition-colors"
+                        title="Probar bot en WhatsApp"
+                      >
+                        <MessageSquare size={16} />
+                      </a>
+                    )}
                     <button onClick={() => setModal(bot)} className="p-2 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors" title="Editar">
                       <Edit2 size={16} />
                     </button>
@@ -216,6 +237,15 @@ export function MisBots() {
         />
       )}
 
+      {/* Modal asignar número (admin) */}
+      {asignar && (
+        <AsignarNumeroModal
+          bot={asignar}
+          onClose={() => setAsignar(null)}
+          onAsignado={() => { setAsignar(null); cargar() }}
+        />
+      )}
+
       {/* Confirmar eliminar */}
       {confirm && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -229,6 +259,85 @@ export function MisBots() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── MODAL ASIGNAR NÚMERO (ADMIN) ───────────────────────────
+function AsignarNumeroModal({ bot, onClose, onAsignado }) {
+  const [form, setForm]     = useState({ phone_number_id: bot.phone_number_id || '', waba_token: '' })
+  const [loading, setLoading] = useState(false)
+  const [result, setResult]   = useState(null)
+  const [error, setError]     = useState('')
+
+  async function verificar(e) {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    setResult(null)
+    try {
+      const payload = { phone_number_id: form.phone_number_id.trim() }
+      if (form.waba_token.trim()) payload.waba_token = form.waba_token.trim()
+      const data = await api.verificarConexion(bot.id, payload)
+      setResult(data)
+      setTimeout(onAsignado, 2000)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 max-w-md w-full">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-bold text-gray-100 text-lg">Asignar número — {bot.nombre}</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-300 p-1"><X size={20} /></button>
+        </div>
+
+        {result ? (
+          <div className="text-center py-6">
+            <CheckCircle size={44} className="text-brand-400 mx-auto mb-3" />
+            <p className="text-gray-100 font-semibold text-lg">{result.nombre}</p>
+            <p className="text-brand-400 font-mono text-xl mt-1">{result.numero}</p>
+            <p className="text-gray-500 text-xs mt-2">Conexión activa · Redirigiendo...</p>
+          </div>
+        ) : (
+          <form onSubmit={verificar} className="space-y-4">
+            <div>
+              <label className="label">Phone Number ID *</label>
+              <input
+                className="input font-mono"
+                required
+                placeholder="1221845541002402"
+                value={form.phone_number_id}
+                onChange={e => setForm(f => ({ ...f, phone_number_id: e.target.value }))}
+              />
+              <p className="text-xs text-gray-600 mt-1">Meta for Developers → WhatsApp → API Setup</p>
+            </div>
+            <div>
+              <label className="label">Token WABA <span className="text-gray-600 font-normal">(opcional)</span></label>
+              <input
+                className="input font-mono text-xs"
+                placeholder="Dejar vacío para usar el token configurado en el servidor"
+                value={form.waba_token}
+                onChange={e => setForm(f => ({ ...f, waba_token: e.target.value }))}
+              />
+            </div>
+            {error && (
+              <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-lg p-3">{error}</p>
+            )}
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
+              <button type="submit" disabled={loading} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                {loading ? <Loader2 size={16} className="animate-spin" /> : <Wifi size={16} />}
+                {loading ? 'Verificando...' : 'Verificar y asignar'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
     </div>
   )
 }
