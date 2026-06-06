@@ -546,6 +546,83 @@ router.post('/bots/:id/verificar-conexion', auth, async (req, res) => {
   }
 });
 
+// ─── EMBEDDED SIGNUP (cliente conecta con botón Facebook) ────
+router.post('/bots/:id/embedded-signup', auth, async (req, res) => {
+  try {
+    const { access_token, phone_number_id, waba_id } = req.body;
+    if (!access_token) return res.status(400).json({ error: 'Se requiere access_token' });
+
+    const bot = await queryOne('SELECT * FROM bots WHERE id = ?', [req.params.id]);
+    if (!bot) return res.status(404).json({ error: 'Bot no encontrado' });
+
+    let resolvedPhoneId = phone_number_id;
+
+    // Si tenemos waba_id pero no phone_number_id, obtenerlo de la API
+    if (waba_id && !resolvedPhoneId) {
+      const wabaRes = await axios.get(
+        `https://graph.facebook.com/v19.0/${waba_id}/phone_numbers`,
+        {
+          headers: { Authorization: `Bearer ${access_token}` },
+          params:  { fields: 'id,display_phone_number,verified_name' }
+        }
+      );
+      const phones = wabaRes.data?.data;
+      if (!phones?.length) {
+        return res.status(400).json({ error: 'No se encontraron números en esta cuenta de WhatsApp Business' });
+      }
+      resolvedPhoneId = phones[0].id;
+    }
+
+    if (!resolvedPhoneId) {
+      return res.status(400).json({ error: 'No se pudo determinar el Phone Number ID. Intenta de nuevo.' });
+    }
+
+    // Verificar el número en Meta
+    const phoneRes = await axios.get(
+      `https://graph.facebook.com/v19.0/${resolvedPhoneId}`,
+      {
+        headers: { Authorization: `Bearer ${access_token}` },
+        params:  { fields: 'display_phone_number,verified_name,quality_rating' }
+      }
+    );
+    const { display_phone_number, verified_name, quality_rating } = phoneRes.data;
+
+    // Intentar suscribir el webhook automáticamente
+    if (waba_id) {
+      try {
+        await axios.post(
+          `https://graph.facebook.com/v19.0/${waba_id}/subscribed_apps`,
+          {},
+          { headers: { Authorization: `Bearer ${access_token}` } }
+        );
+      } catch (subErr) {
+        console.warn('[EmbeddedSignup] No se pudo auto-suscribir webhook:', subErr.response?.data?.error?.message);
+      }
+    }
+
+    await query(
+      `UPDATE bots SET
+         waba_token           = ?,
+         phone_number_id      = ?,
+         tipo_conexion        = 'propio',
+         estado_conexion      = 'activo',
+         webhook_configurado  = 1,
+         numero_display       = ?,
+         nombre_verificado    = ?,
+         activo               = 1
+       WHERE id = ?`,
+      [access_token, resolvedPhoneId, display_phone_number, verified_name, req.params.id]
+    );
+
+    res.json({ ok: true, numero: display_phone_number, nombre: verified_name, calidad: quality_rating });
+  } catch (err) {
+    const apiErr = err.response?.data?.error;
+    if (apiErr?.code === 190) return res.status(400).json({ error: 'Sesión expirada. Vuelve a intentar la conexión.' });
+    if (apiErr?.code === 100) return res.status(400).json({ error: 'No se pudo acceder al número de WhatsApp.' });
+    res.status(500).json({ error: apiErr?.message || err.message });
+  }
+});
+
 // ─── ASIGNAR NÚMERO GESTIONADO (solo admin) ───────────────────
 // El admin asigna un phone_number_id del pool a un bot de plan mensual.
 router.post('/bots/:id/asignar-numero', auth, adminOnly, async (req, res) => {
