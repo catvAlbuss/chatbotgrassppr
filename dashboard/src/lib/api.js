@@ -49,4 +49,5 @@ export const api = {
   botsPendientes: ()          => request('GET',  '/bots/pendientes'),
   verificarConexion: (id, data) => request('POST', `/bots/${id}/verificar-conexion`, data),
   asignarNumero:     (id, data) => request('POST', `/bots/${id}/asignar-numero`, data),
+  embeddedSignup:    (id, data) => request('POST', `/bots/${id}/embedded-signup`, data),
 };
