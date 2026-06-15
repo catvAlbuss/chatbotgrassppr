@@ -24,6 +24,12 @@ const CONFIG_PATH = path.join(__dirname, 'botconfig.json');
 const JWT_SECRET = () => process.env.DASHBOARD_SECRET || 'gespro_asist_secret_2026';
 
 // ─── AUTH MIDDLEWARE ─────────────────────────────────────────
+// Jerarquía: root > administrador > administrador_bot > cliente
+const ROL_NIVEL = {
+  root: 4, administrador: 3, administrador_bot: 2, cliente: 1,
+  admin: 4, operador: 2, consulta: 1  // legacy
+};
+
 function auth(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No autorizado' });
@@ -35,12 +41,26 @@ function auth(req, res, next) {
   }
 }
 
-function adminOnly(req, res, next) {
-  if (req.user?.rol !== 'admin') {
-    return res.status(403).json({ error: 'Se requiere rol admin' });
-  }
-  next();
+// Requiere nivel mínimo de rol
+function requireNivel(minNivel) {
+  return (req, res, next) => {
+    const nivel = ROL_NIVEL[req.user?.rol] || 0;
+    if (nivel < minNivel) {
+      return res.status(403).json({ error: 'Permisos insuficientes' });
+    }
+    next();
+  };
 }
+
+// Shortcuts de nivel
+const adminBotOnly    = requireNivel(2);  // administrador_bot+
+const adminOnly       = requireNivel(3);  // administrador+
+const rootOnly        = requireNivel(4);  // root solamente
+
+// Helpers
+function esAdmin(rol)      { return (ROL_NIVEL[rol] || 0) >= 3; }
+function esAdminBot(rol)   { return (ROL_NIVEL[rol] || 0) >= 2; }
+function esCliente(rol)    { return rol === 'cliente' || rol === 'consulta'; }
 
 // ─── AUTENTICACIÓN ───────────────────────────────────────────
 router.post('/auth/login', async (req, res) => {
@@ -96,7 +116,7 @@ router.post('/auth/refresh', auth, (req, res) => {
 });
 
 // Usuarios vinculados con personas RENIEC
-router.get('/usuarios', auth, adminOnly, async (_req, res) => {
+router.get('/usuarios', auth, adminBotOnly, async (_req, res) => {
   try {
     const usuarios = await query(
       `SELECT u.id, u.usuario, u.rol, u.activo, u.ultimo_login, u.creado_en,
@@ -115,17 +135,22 @@ router.get('/usuarios', auth, adminOnly, async (_req, res) => {
   }
 });
 
-router.post('/usuarios', auth, adminOnly, async (req, res) => {
+router.post('/usuarios', auth, adminBotOnly, async (req, res) => {
   try {
-    const { usuario, password, rol = 'operador', dni, bot_ids = [] } = req.body || {};
+    const { usuario, password, rol = 'cliente', dni, bot_ids = [] } = req.body || {};
     if (!usuario || !password) {
       return res.status(400).json({ error: 'usuario y password son requeridos' });
     }
     if (String(password).length < 8) {
       return res.status(400).json({ error: 'password debe tener al menos 8 caracteres' });
     }
-    if (!['admin', 'operador', 'consulta'].includes(rol)) {
+    const rolesValidos = ['root', 'administrador', 'administrador_bot', 'cliente', 'admin', 'operador', 'consulta'];
+    if (!rolesValidos.includes(rol)) {
       return res.status(400).json({ error: 'rol inválido' });
+    }
+    // Solo root puede crear otro root
+    if (rol === 'root' && !esAdmin(req.user?.rol)) {
+      return res.status(403).json({ error: 'Solo root puede crear usuarios root' });
     }
 
     let personaId = null;
@@ -156,6 +181,31 @@ router.post('/usuarios', auth, adminOnly, async (req, res) => {
     res.status(status).json({ error: err.code === 'ER_DUP_ENTRY' ? 'Usuario o DNI ya vinculado' : err.message });
   }
 });
+
+router.put('/usuarios/:id', auth, adminBotOnly, async (req, res) => {
+  try {
+    const { activo, rol, bot_ids } = req.body || {}
+    // No permite escalar a root salvo que sea root
+    if (rol === 'root' && !esAdmin(req.user?.rol)) {
+      return res.status(403).json({ error: 'Solo root puede asignar ese rol' })
+    }
+    if (activo !== undefined) {
+      await query('UPDATE usuarios SET activo = ? WHERE id = ?', [activo ? 1 : 0, req.params.id])
+    }
+    if (rol) {
+      await query('UPDATE usuarios SET rol = ? WHERE id = ?', [rol, req.params.id])
+    }
+    if (Array.isArray(bot_ids)) {
+      await query('DELETE FROM usuario_bots WHERE usuario_id = ?', [req.params.id])
+      for (const botId of bot_ids) {
+        await query('INSERT IGNORE INTO usuario_bots (usuario_id, bot_id) VALUES (?, ?)', [req.params.id, botId])
+      }
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
 
 router.get('/reniec/:dni', auth, async (req, res) => {
   if (!/^\d{8}$/.test(req.params.dni)) {
@@ -397,13 +447,12 @@ const BOT_TEMPLATES = {
 
 router.get('/bots', auth, async (req, res) => {
   try {
-    const bots = req.user.rol === 'admin' || req.user.legacy
+    const bots = esAdminBot(req.user?.rol) || req.user.legacy
       ? await query('SELECT * FROM bots ORDER BY creado_en DESC')
       : await query(
           `SELECT b.*
            FROM bots b
-           INNER JOIN usuario_bots ub ON ub.bot_id = b.id
-           WHERE ub.usuario_id = ?
+           INNER JOIN usuario_bots ub ON ub.bot_id = b.id AND ub.usuario_id = ?
            ORDER BY b.creado_en DESC`,
           [req.user.id]
         );
@@ -416,7 +465,7 @@ router.get('/bots', auth, async (req, res) => {
   }
 });
 
-router.post('/bots', auth, async (req, res) => {
+router.post('/bots', auth, adminBotOnly, async (req, res) => {
   try {
     const { nombre, tipo, phone_number_id, admin_phone, plan } = req.body;
     if (!nombre || !tipo) return res.status(400).json({ error: 'nombre y tipo son requeridos' });
@@ -454,17 +503,33 @@ router.get('/bots/:id', auth, async (req, res) => {
 
 router.put('/bots/:id', auth, async (req, res) => {
   try {
-    const { nombre, phone_number_id, admin_phone, config, plan, plan_inicio, plan_expira, activo } = req.body;
+    const body = { ...req.body };
+
+    // Clientes: solo pueden editar sus propios bots y campos permitidos
+    if (esCliente(req.user?.rol)) {
+      const asignado = await queryOne(
+        'SELECT puede_editar FROM usuario_bots WHERE usuario_id = ? AND bot_id = ?',
+        [req.user.id, req.params.id]
+      );
+      if (!asignado || !asignado.puede_editar) {
+        return res.status(403).json({ error: 'Sin permiso para editar este bot' });
+      }
+      // Campos que el cliente NO puede modificar
+      delete body.plan; delete body.plan_inicio; delete body.plan_expira;
+      delete body.activo; delete body.phone_number_id; delete body.tipo;
+    }
+
+    const { nombre, phone_number_id, admin_phone, config, plan, plan_inicio, plan_expira, activo } = body;
     await query(
       `UPDATE bots SET
-        nombre = COALESCE(?, nombre),
+        nombre          = COALESCE(?, nombre),
         phone_number_id = COALESCE(?, phone_number_id),
-        admin_phone = COALESCE(?, admin_phone),
-        config = COALESCE(?, config),
-        plan = COALESCE(?, plan),
-        plan_inicio = COALESCE(?, plan_inicio),
-        plan_expira = COALESCE(?, plan_expira),
-        activo = COALESCE(?, activo)
+        admin_phone     = COALESCE(?, admin_phone),
+        config          = COALESCE(?, config),
+        plan            = COALESCE(?, plan),
+        plan_inicio     = COALESCE(?, plan_inicio),
+        plan_expira     = COALESCE(?, plan_expira),
+        activo          = COALESCE(?, activo)
        WHERE id = ?`,
       [
         nombre || null, phone_number_id || null, admin_phone || null,
@@ -480,7 +545,7 @@ router.put('/bots/:id', auth, async (req, res) => {
   }
 });
 
-router.delete('/bots/:id', auth, async (req, res) => {
+router.delete('/bots/:id', auth, adminBotOnly, async (req, res) => {
   try {
     await query('DELETE FROM bots WHERE id = ?', [req.params.id]);
     res.json({ ok: true });
@@ -623,9 +688,163 @@ router.post('/bots/:id/embedded-signup', auth, async (req, res) => {
   }
 });
 
-// ─── ASIGNAR NÚMERO GESTIONADO (solo admin) ───────────────────
+// ─── VERIFICAR REGISTRO (flujo de reclamo) ───────────────────
+// El cliente ya verificó su número manualmente en Meta Business Manager.
+// Este endpoint consulta la lista de teléfonos del WABA y lo activa si lo encuentra.
+router.post('/bots/:id/verificar-registro', auth, async (req, res) => {
+  try {
+    const bot = await queryOne('SELECT * FROM bots WHERE id = ?', [req.params.id]);
+    if (!bot) return res.status(404).json({ error: 'Bot no encontrado' });
+
+    // Verificar acceso: el usuario debe ser dueño del bot o adminBot+
+    if (!esAdminBot(req.user?.rol)) {
+      const asignado = await queryOne(
+        'SELECT 1 FROM usuario_bots WHERE usuario_id = ? AND bot_id = ?',
+        [req.user.id, req.params.id]
+      );
+      if (!asignado) return res.status(403).json({ error: 'Sin acceso a este bot' });
+    }
+
+    const { phone } = req.body;
+    if (!phone) return res.status(400).json({ error: 'Se requiere el número de teléfono' });
+
+    const wabaId       = process.env.WABA_ID;
+    const platformToken = process.env.WHATSAPP_TOKEN;
+
+    if (!wabaId || !platformToken) {
+      return res.status(500).json({ error: 'WABA_ID o WHATSAPP_TOKEN no configurados en el servidor' });
+    }
+
+    // Obtener todos los números registrados en el WABA
+    const metaRes = await axios.get(
+      `https://graph.facebook.com/v18.0/${wabaId}/phone_numbers`,
+      {
+        headers: { Authorization: `Bearer ${platformToken}` },
+        params:  { fields: 'id,display_phone_number,verified_name,quality_rating,status,code_verification_status' }
+      }
+    );
+
+    const phones = metaRes.data?.data || [];
+
+    // Normalizar el número buscado (solo dígitos, comparar al final)
+    const searchDigits = String(phone).replace(/\D/g, '');
+    const found = phones.find(p => {
+      const pDigits = String(p.display_phone_number || '').replace(/\D/g, '');
+      return pDigits.endsWith(searchDigits) || searchDigits.endsWith(pDigits)
+    });
+
+    if (!found) {
+      return res.status(404).json({
+        error: `El número ${phone} aún no aparece en tu cuenta de Meta. Asegúrate de haber completado la verificación por SMS en Meta Business Manager.`,
+        phones_found: phones.map(p => p.display_phone_number)
+      });
+    }
+
+    // Activar el bot con este número
+    await query(
+      `UPDATE bots SET
+         phone_number_id      = ?,
+         tipo_conexion        = 'propio',
+         estado_conexion      = 'activo',
+         webhook_configurado  = 1,
+         numero_display       = ?,
+         nombre_verificado    = ?,
+         activo               = 1
+       WHERE id = ?`,
+      [found.id, found.display_phone_number, found.verified_name || '', req.params.id]
+    );
+
+    res.json({
+      ok:      true,
+      numero:  found.display_phone_number,
+      nombre:  found.verified_name,
+      calidad: found.quality_rating,
+      estado:  found.status
+    });
+  } catch (err) {
+    const apiErr = err.response?.data?.error;
+    if (apiErr?.code === 190) {
+      return res.status(400).json({ error: 'Token del servidor inválido. Contacta al administrador.' });
+    }
+    if (apiErr?.code === 10) {
+      return res.status(400).json({ error: 'El token del servidor no tiene permisos para listar números. Configura un System User Token con permiso whatsapp_business_management.' });
+    }
+    res.status(500).json({ error: apiErr?.message || err.message });
+  }
+});
+
+// ─── TOGGLE ACTIVO (administrador+) ─────────────────────────
+router.post('/bots/:id/toggle-activo', auth, adminOnly, async (req, res) => {
+  try {
+    const bot = await queryOne('SELECT id, activo FROM bots WHERE id = ?', [req.params.id]);
+    if (!bot) return res.status(404).json({ error: 'Bot no encontrado' });
+    await query('UPDATE bots SET activo = ? WHERE id = ?', [bot.activo ? 0 : 1, req.params.id]);
+    res.json({ ok: true, activo: !bot.activo });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── ASIGNAR BOT A CLIENTE ───────────────────────────────────
+router.post('/bots/:id/asignar-cliente', auth, adminBotOnly, async (req, res) => {
+  try {
+    const { usuario_id, puede_editar = 1, puede_ver_stats = 0 } = req.body;
+    if (!usuario_id) return res.status(400).json({ error: 'usuario_id requerido' });
+    await query(
+      `INSERT INTO usuario_bots (usuario_id, bot_id, puede_editar, puede_ver_stats)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE puede_editar = VALUES(puede_editar), puede_ver_stats = VALUES(puede_ver_stats)`,
+      [usuario_id, req.params.id, puede_editar ? 1 : 0, puede_ver_stats ? 1 : 0]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── STATS ADMINISTRATIVAS (administrador+) ──────────────────
+router.get('/stats/admin', auth, adminOnly, async (_req, res) => {
+  try {
+    const [botsActivos, clientesTotal, ingresosUltimos30, distribucion] = await Promise.all([
+      queryOne('SELECT COUNT(*) AS total FROM bots WHERE activo = 1'),
+      queryOne('SELECT COUNT(*) AS total FROM usuarios WHERE rol = "cliente" AND activo = 1'),
+      queryOne(`
+        SELECT COALESCE(SUM(monto_reserva), 0) AS total
+        FROM reservas
+        WHERE estado = 'CONFIRMADA' AND creado_en >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      `),
+      query(`
+        SELECT b.plan, COUNT(*) AS total
+        FROM bots b
+        WHERE b.activo = 1
+        GROUP BY b.plan
+      `)
+    ]);
+
+    const tendencia = await query(`
+      SELECT DATE(creado_en) AS dia,
+             COUNT(*) AS reservas,
+             COALESCE(SUM(monto_reserva),0) AS ingresos
+      FROM reservas
+      WHERE creado_en >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+      GROUP BY dia ORDER BY dia
+    `);
+
+    res.json({
+      bots_activos: botsActivos?.total || 0,
+      clientes_total: clientesTotal?.total || 0,
+      ingresos_30d: Number(ingresosUltimos30?.total || 0).toFixed(2),
+      distribucion_planes: distribucion,
+      tendencia_30d: tendencia
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── ASIGNAR NÚMERO GESTIONADO (administrador_bot+) ──────────
 // El admin asigna un phone_number_id del pool a un bot de plan mensual.
-router.post('/bots/:id/asignar-numero', auth, adminOnly, async (req, res) => {
+router.post('/bots/:id/asignar-numero', auth, adminBotOnly, async (req, res) => {
   try {
     const { phone_number_id, numero_display } = req.body;
     if (!phone_number_id) return res.status(400).json({ error: 'phone_number_id requerido' });
@@ -646,8 +865,8 @@ router.post('/bots/:id/asignar-numero', auth, adminOnly, async (req, res) => {
   }
 });
 
-// ─── BOTS PENDIENTES DE ACTIVACIÓN (solo admin) ──────────────
-router.get('/bots/pendientes', auth, adminOnly, async (_req, res) => {
+// ─── BOTS PENDIENTES DE ACTIVACIÓN (administrador_bot+) ──────
+router.get('/bots/pendientes', auth, adminBotOnly, async (_req, res) => {
   try {
     const bots = await query(
       `SELECT b.*, u.usuario
@@ -663,6 +882,49 @@ router.get('/bots/pendientes', auth, adminOnly, async (_req, res) => {
     res.json(bots);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── UTILIDAD: LISTAR NÚMEROS DEL WABA (solo root) ───────────
+// Ayuda al admin a verificar qué números tiene registrados en Meta
+// y a descubrir el WABA_ID si aún no lo tiene configurado.
+router.get('/meta/numeros', auth, rootOnly, async (_req, res) => {
+  try {
+    const wabaId       = process.env.WABA_ID;
+    const platformToken = process.env.WHATSAPP_TOKEN;
+
+    if (!platformToken) {
+      return res.status(500).json({ error: 'WHATSAPP_TOKEN no configurado' });
+    }
+
+    if (!wabaId || wabaId === 'AQUI_TU_WABA_ID') {
+      return res.status(400).json({
+        error: 'WABA_ID no configurado en .env',
+        instrucciones: [
+          '1. Ve a business.facebook.com',
+          '2. Haz clic en "Configuración" (engranaje abajo a la izquierda)',
+          '3. Selecciona "Cuentas de WhatsApp" en el menú lateral',
+          '4. El número de ID que aparece es tu WABA_ID',
+          '5. Cópialo y ponlo en WABA_ID= en el archivo .env'
+        ]
+      });
+    }
+
+    const metaRes = await axios.get(
+      `https://graph.facebook.com/v18.0/${wabaId}/phone_numbers`,
+      {
+        headers: { Authorization: `Bearer ${platformToken}` },
+        params:  { fields: 'id,display_phone_number,verified_name,status,quality_rating,code_verification_status' }
+      }
+    );
+
+    res.json({
+      waba_id: wabaId,
+      numeros: metaRes.data?.data || []
+    });
+  } catch (err) {
+    const apiErr = err.response?.data?.error;
+    res.status(500).json({ error: apiErr?.message || err.message, code: apiErr?.code });
   }
 });
 

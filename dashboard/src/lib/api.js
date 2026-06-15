@@ -46,8 +46,17 @@ export const api = {
   actualizarBot:  (id, data)  => request('PUT',  `/bots/${id}`, data),
   eliminarBot:    (id)        => request('DELETE',`/bots/${id}`),
   botTemplates:   ()          => request('GET',  '/bots/templates/all'),
-  botsPendientes: ()          => request('GET',  '/bots/pendientes'),
+  botsPendientes:    ()          => request('GET',  '/bots/pendientes'),
   verificarConexion: (id, data) => request('POST', `/bots/${id}/verificar-conexion`, data),
   asignarNumero:     (id, data) => request('POST', `/bots/${id}/asignar-numero`, data),
   embeddedSignup:    (id, data) => request('POST', `/bots/${id}/embedded-signup`, data),
+  toggleActivo:      (id)       => request('POST', `/bots/${id}/toggle-activo`),
+  asignarCliente:    (id, data) => request('POST', `/bots/${id}/asignar-cliente`, data),
+  verificarRegistro: (id, data) => request('POST', `/bots/${id}/verificar-registro`, data),
+  // estadísticas
+  statsAdmin: () => request('GET', '/stats/admin'),
+  // meta utilidades
+  metaNumeros: () => request('GET', '/meta/numeros'),
+  // usuarios — métodos extendidos
+  actualizarUsuario: (id, data) => request('PUT', `/usuarios/${id}`, data),
 };

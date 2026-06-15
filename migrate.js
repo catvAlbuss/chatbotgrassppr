@@ -201,6 +201,52 @@ async function run() {
       console.log('  ⏭️  conversaciones PK ya actualizada');
     }
 
+    // ── 005: roles empresarial ────────────────────────────────
+    console.log('\n--- Roles empresarial (v3.0) ---');
+
+    // Ampliar el ENUM de roles para incluir los nuevos
+    try {
+      await conn.execute(`
+        ALTER TABLE \`usuarios\`
+        MODIFY COLUMN \`rol\`
+          ENUM('root','administrador','administrador_bot','cliente','admin','operador','consulta')
+          NOT NULL DEFAULT 'cliente'
+      `);
+      console.log('  ✅ usuarios.rol — nuevos roles agregados');
+    } catch (e) {
+      console.log('  ⏭️  usuarios.rol ya actualizado');
+    }
+
+    // Agregar campos a usuario_bots (puede_editar, puede_ver_stats)
+    const alters005 = [
+      [`ALTER TABLE \`usuario_bots\` ADD COLUMN \`puede_editar\` TINYINT(1) NOT NULL DEFAULT 1`,    'usuario_bots.puede_editar'],
+      [`ALTER TABLE \`usuario_bots\` ADD COLUMN \`puede_ver_stats\` TINYINT(1) NOT NULL DEFAULT 0`, 'usuario_bots.puede_ver_stats'],
+    ];
+    for (const [sql, label] of alters005) {
+      try {
+        await conn.execute(sql);
+        console.log(`  ✅ ${label}`);
+      } catch (e) {
+        if (e.code === 'ER_DUP_FIELDNAME') console.log(`  ⏭️  ${label} ya existe`);
+        else console.warn(`  ⚠️  ${label}: ${e.message}`);
+      }
+    }
+
+    // Migrar roles legacy si existen
+    try {
+      const [rows] = await conn.execute(`SELECT COUNT(*) AS n FROM usuarios WHERE rol IN ('admin','operador','consulta')`);
+      if (rows[0].n > 0) {
+        await conn.execute(`UPDATE \`usuarios\` SET \`rol\` = 'root'              WHERE \`rol\` = 'admin'`);
+        await conn.execute(`UPDATE \`usuarios\` SET \`rol\` = 'administrador_bot' WHERE \`rol\` = 'operador'`);
+        await conn.execute(`UPDATE \`usuarios\` SET \`rol\` = 'cliente'           WHERE \`rol\` = 'consulta'`);
+        console.log(`  ✅ ${rows[0].n} usuarios migrados a roles nuevos`);
+      } else {
+        console.log('  ⏭️  No hay usuarios con roles legacy');
+      }
+    } catch (e) {
+      console.warn(`  ⚠️  Migración de roles legacy: ${e.message}`);
+    }
+
     console.log('\n🎉 Migración completada exitosamente\n');
 
   } catch (err) {
