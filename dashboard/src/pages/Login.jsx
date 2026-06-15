@@ -1,23 +1,26 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bot, Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Bot, Eye, EyeOff, Loader2, Shield } from 'lucide-react'
 import { api } from '../lib/api.js'
+import { useAuth } from '../context/AuthContext.jsx'
 
 export function Login() {
-  const [usuario, setUsuario] = useState('')
+  const [usuario, setUsuario]   = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState('')
   const navigate = useNavigate()
+  const { login } = useAuth()
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      const { token } = await api.login(usuario, password)
-      localStorage.setItem('gb_token', token)
+      const data = await api.login(usuario, password)
+      localStorage.setItem('gb_token', data.token)
+      login({ usuario: data.usuario, rol: data.rol, persona: data.persona || null })
       navigate('/admin')
     } catch (err) {
       setError(err.message)
@@ -28,30 +31,36 @@ export function Login() {
 
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center p-4">
-      {/* Background glow */}
+      {/* Fondo decorativo */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-brand-500/5 rounded-full blur-3xl" />
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-brand-500/5 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-purple-500/5 rounded-full blur-3xl" />
       </div>
 
       <div className="w-full max-w-sm relative">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-brand-500 shadow-lg shadow-brand-500/20 mb-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-600 shadow-lg shadow-brand-500/25 mb-4">
             <Bot size={32} className="text-white" />
           </div>
           <h1 className="text-2xl font-bold text-gray-100">Gespro Asist</h1>
-          <p className="text-gray-500 text-sm mt-1">Panel de Administración</p>
+          <p className="text-gray-500 text-sm mt-1">Plataforma de Gestión de Bots</p>
         </div>
 
         {/* Card */}
-        <div className="card shadow-xl shadow-black/20">
+        <div className="card shadow-2xl shadow-black/40 border-gray-700/50">
+          <div className="flex items-center gap-2 mb-5 pb-4 border-b border-gray-800">
+            <Shield size={15} className="text-brand-400" />
+            <span className="text-xs text-gray-500 font-medium uppercase tracking-wider">Acceso seguro</span>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="label">Usuario</label>
               <input
                 className="input"
                 type="text"
-                placeholder="admin"
+                placeholder="Ingresa tu usuario"
                 value={usuario}
                 onChange={e => setUsuario(e.target.value)}
                 autoFocus
@@ -81,20 +90,24 @@ export function Login() {
             </div>
 
             {error && (
-              <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-3 py-2 rounded-lg">
-                {error}
+              <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm px-3 py-2 rounded-lg flex items-center gap-2">
+                <span className="text-red-500">⚠</span> {error}
               </div>
             )}
 
-            <button type="submit" disabled={loading} className="btn-primary w-full flex items-center justify-center gap-2 py-2.5">
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary w-full flex items-center justify-center gap-2 py-2.5 mt-2"
+            >
               {loading ? <Loader2 size={18} className="animate-spin" /> : null}
-              {loading ? 'Ingresando...' : 'Ingresar'}
+              {loading ? 'Verificando...' : 'Ingresar al sistema'}
             </button>
           </form>
         </div>
 
         <p className="text-center text-xs text-gray-600 mt-6">
-          Gespro Asist Admin v2.1
+          Gespro Asist · v3.0 Enterprise
         </p>
       </div>
     </div>

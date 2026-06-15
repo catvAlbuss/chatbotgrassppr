@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Plus, Bot, Edit2, Trash2, Power, Loader2, X, CheckCircle, Wifi, WifiOff, Clock, PhoneCall, MessageSquare, Link2 } from 'lucide-react'
+import { Plus, Bot, Edit2, Trash2, Power, Loader2, X, CheckCircle, Wifi, WifiOff, Clock, PhoneCall, MessageSquare, Link2, Users } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { ConectarWhatsApp } from './ConectarWhatsApp.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
 
 const TIPOS = {
   grass:      { emoji: '🌿', label: 'Grass Sintético',  color: 'brand',  desc: 'Reservas de canchas por hora, cobro Yape/Plin' },
@@ -55,12 +56,13 @@ function EstadoConexionBadge({ bot }) {
 }
 
 export function MisBots() {
-  const [bots, setBots]       = useState([])
-  const [loading, setLoading] = useState(true)
-  const [modal, setModal]     = useState(null)      // null | 'crear' | bot-object
-  const [confirm, setConfirm] = useState(null)      // id a eliminar
-  const [conectar, setConectar] = useState(null)    // bot a conectar
-  const [asignar, setAsignar]   = useState(null)    // bot a asignar número (admin)
+  const { esAdminBot, esAdmin, esCliente } = useAuth()
+  const [bots, setBots]         = useState([])
+  const [loading, setLoading]   = useState(true)
+  const [modal, setModal]       = useState(null)
+  const [confirm, setConfirm]   = useState(null)
+  const [conectar, setConectar] = useState(null)
+  const [asignar, setAsignar]   = useState(null)
 
   function cargar() {
     setLoading(true)
@@ -70,7 +72,12 @@ export function MisBots() {
   useEffect(() => { cargar() }, [])
 
   async function toggleActivo(bot) {
-    await api.actualizarBot(bot.id, { activo: bot.activo ? 0 : 1 })
+    // administrador+ usa el endpoint protegido; adminBot usa el clásico
+    if (esAdmin) {
+      await api.toggleActivo(bot.id)
+    } else {
+      await api.actualizarBot(bot.id, { activo: bot.activo ? 0 : 1 })
+    }
     cargar()
   }
 
@@ -90,26 +97,45 @@ export function MisBots() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-100">Mis Bots</h1>
-          <p className="text-gray-500 text-sm mt-0.5">Gestiona todos tus chatbots desde un solo lugar</p>
+          <h1 className="text-2xl font-bold text-gray-100">{esCliente ? 'Mis Bots' : 'Gestión de Bots'}</h1>
+          <p className="text-gray-500 text-sm mt-0.5">
+            {esCliente ? 'Visualiza y configura tus bots activos' : 'Administra, crea y asigna bots a clientes'}
+          </p>
         </div>
-        <button onClick={() => setModal('crear')} className="btn-primary flex items-center gap-2">
-          <Plus size={16} /> Crear bot
-        </button>
+        {esAdminBot && (
+          <button onClick={() => setModal('crear')} className="btn-primary flex items-center gap-2">
+            <Plus size={16} /> Crear bot
+          </button>
+        )}
       </div>
 
-      {/* Tipos disponibles */}
-      <div className="grid md:grid-cols-3 gap-4">
-        {Object.entries(TIPOS).map(([tipo, info]) => (
-          <div key={tipo} className="bg-gray-900/50 border border-gray-800 rounded-xl p-4 flex items-center gap-3">
-            <span className="text-2xl">{info.emoji}</span>
-            <div>
-              <p className="font-medium text-gray-200 text-sm">{info.label}</p>
-              <p className="text-gray-500 text-xs mt-0.5">{info.desc}</p>
-            </div>
+      {/* Banner demo para clientes */}
+      {esCliente && bots.some(b => b.plan === 'demo') && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 flex items-start gap-3">
+          <span className="text-amber-400 text-lg mt-0.5">🎯</span>
+          <div>
+            <p className="text-amber-300 font-medium text-sm">Bot en modo Demo</p>
+            <p className="text-amber-400/80 text-xs mt-0.5">
+              Estás probando el bot. Para activarlo con tu propio número de WhatsApp, actualiza tu plan.
+            </p>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
+
+      {/* Tipos disponibles — solo para admin que puede crear bots */}
+      {esAdminBot && (
+        <div className="grid md:grid-cols-3 gap-4">
+          {Object.entries(TIPOS).map(([tipo, info]) => (
+            <div key={tipo} className="bg-gray-900/50 border border-gray-800 rounded-xl p-4 flex items-center gap-3">
+              <span className="text-2xl">{info.emoji}</span>
+              <div>
+                <p className="font-medium text-gray-200 text-sm">{info.label}</p>
+                <p className="text-gray-500 text-xs mt-0.5">{info.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Lista de bots */}
       {loading ? (
@@ -171,13 +197,13 @@ export function MisBots() {
                         </button>
                       )}
 
-                      {/* CTA admin: asignar número directamente */}
-                      {!yaConectado && (
+                      {/* CTA adminBot+: asignar número directamente */}
+                      {!yaConectado && esAdminBot && (
                         <button
                           onClick={() => setAsignar(bot)}
                           className="mt-1 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-gray-700/60 text-gray-400 border border-gray-600 hover:bg-gray-700 hover:text-gray-200 transition-colors font-medium"
                         >
-                          <Link2 size={12} /> Asignar número
+                          <Link2 size={12} /> Asignar número gestionado
                         </button>
                       )}
 
@@ -202,15 +228,21 @@ export function MisBots() {
                         <MessageSquare size={16} />
                       </a>
                     )}
-                    <button onClick={() => setModal(bot)} className="p-2 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors" title="Editar">
+                    <button onClick={() => setModal(bot)} className="p-2 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors" title="Editar configuración">
                       <Edit2 size={16} />
                     </button>
-                    <button onClick={() => toggleActivo(bot)} className={`p-2 rounded-lg transition-colors ${bot.activo ? 'text-brand-400 hover:bg-brand-500/10' : 'text-gray-500 hover:bg-gray-800'}`} title={bot.activo ? 'Desactivar' : 'Activar'}>
-                      <Power size={16} />
-                    </button>
-                    <button onClick={() => setConfirm(bot.id)} className="p-2 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Eliminar">
-                      <Trash2 size={16} />
-                    </button>
+                    {/* Toggle activo: solo administrador+ */}
+                    {esAdmin && (
+                      <button onClick={() => toggleActivo(bot)} className={`p-2 rounded-lg transition-colors ${bot.activo ? 'text-brand-400 hover:bg-brand-500/10' : 'text-gray-500 hover:bg-gray-800'}`} title={bot.activo ? 'Desactivar bot' : 'Activar bot'}>
+                        <Power size={16} />
+                      </button>
+                    )}
+                    {/* Eliminar: solo adminBot+ */}
+                    {esAdminBot && (
+                      <button onClick={() => setConfirm(bot.id)} className="p-2 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Eliminar bot">
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -344,6 +376,7 @@ function AsignarNumeroModal({ bot, onClose, onAsignado }) {
 
 // ─── MODAL CREAR / EDITAR BOT ────────────────────────────────
 function BotModal({ bot, onClose, onSaved }) {
+  const { esAdminBot, esCliente } = useAuth()
   const isNew = !bot
   const [paso, setPaso]   = useState(1)   // 1=tipo, 2=negocio, 3=plan
   const [form, setForm]   = useState({
@@ -481,7 +514,8 @@ function BotModal({ bot, onClose, onSaved }) {
                 </>
               )}
 
-              {!isNew && (
+              {/* Plan y fechas: solo para adminBot+ */}
+              {!isNew && esAdminBot && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -503,6 +537,15 @@ function BotModal({ bot, onClose, onSaved }) {
                     <input className="input" type="date" value={form.plan_inicio} onChange={e => set('plan_inicio', e.target.value)} />
                   </div>
                 </>
+              )}
+              {/* Para clientes: mostrar plan actual (solo lectura) */}
+              {!isNew && esCliente && bot?.plan && (
+                <div className="bg-gray-800 rounded-lg px-4 py-3 flex items-center justify-between">
+                  <span className="text-sm text-gray-400">Plan activo</span>
+                  <span className={`text-sm font-semibold ${PLANES[bot.plan]?.color || 'text-gray-300'}`}>
+                    {PLANES[bot.plan]?.label || bot.plan}
+                  </span>
+                </div>
               )}
 
               {isNew ? (

@@ -1,8 +1,11 @@
-import { Check, Zap, Shield, Crown, MessageCircle, Star } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Check, Zap, Shield, Crown, MessageCircle, Star, BadgeCheck, Loader2 } from 'lucide-react'
+import { api } from '../lib/api.js'
+import { useAuth } from '../context/AuthContext.jsx'
 
 const CONTACT = import.meta.env.VITE_CONTACT_PHONE || '51959422042'
 
-const PLANES = [
+const PLANES_INFO = [
   {
     id: 'mensual',
     icon: Zap,
@@ -37,7 +40,7 @@ const PLANES = [
       'Todo lo del plan Mensual',
       'Reservas ilimitadas',
       'Reportes y estadísticas',
-      'Configuración avanzada',
+      'Configura tu propio número WA',
       'Integración con RENIEC',
       'Soporte prioritario 24/7',
       'Backup automático de datos',
@@ -75,6 +78,7 @@ const COLOR_MAP = {
     btn: 'bg-blue-600 hover:bg-blue-700 text-white',
     check: 'text-blue-400',
     badge: '',
+    activeBorder: 'border-blue-500/50',
   },
   brand: {
     icon: 'bg-brand-500/10 text-brand-400',
@@ -82,6 +86,7 @@ const COLOR_MAP = {
     btn: 'bg-brand-500 hover:bg-brand-600 text-white shadow-lg shadow-brand-500/25',
     check: 'text-brand-400',
     badge: 'bg-brand-500 text-white',
+    activeBorder: 'border-brand-500/50',
   },
   amber: {
     icon: 'bg-amber-500/10 text-amber-400',
@@ -89,10 +94,27 @@ const COLOR_MAP = {
     btn: 'bg-amber-600 hover:bg-amber-700 text-white',
     check: 'text-amber-400',
     badge: '',
+    activeBorder: 'border-amber-500/50',
   },
 }
 
 export function Planes() {
+  const { esCliente, user } = useAuth()
+  const [bots, setBots]     = useState([])
+  const [loading, setLoading] = useState(esCliente)
+
+  // Para clientes: cargar sus bots y saber qué plan tienen
+  useEffect(() => {
+    if (!esCliente) return
+    api.bots()
+      .then(setBots)
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [esCliente])
+
+  const planActual = bots[0]?.plan || null
+  const venceEn   = bots[0]?.plan_expira || null
+
   return (
     <div className="space-y-8 max-w-5xl">
       {/* Header */}
@@ -101,25 +123,78 @@ export function Planes() {
           <Star size={13} /> Gespro Asist · Planes y Precios
         </div>
         <h1 className="text-3xl font-bold text-gray-100">
-          Elige el plan que mejor se adapta
+          {esCliente ? 'Tu plan y opciones de upgrade' : 'Elige el plan que mejor se adapta'}
         </h1>
         <p className="text-gray-400 max-w-lg mx-auto">
           Automatiza tus reservas y pagos con WhatsApp. Sin complicaciones, sin hardware adicional.
         </p>
       </div>
 
-      {/* Cards */}
+      {/* Card del plan actual — solo para clientes con bots */}
+      {esCliente && !loading && planActual && (
+        <div className={`card border-2 ${COLOR_MAP[PLANES_INFO.find(p => p.id === planActual)?.color || 'blue']?.activeBorder || 'border-brand-500/30'}`}>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <BadgeCheck size={22} className="text-brand-400" />
+              <div>
+                <p className="text-xs text-gray-500 mb-0.5">Tu plan actual</p>
+                <p className="font-bold text-gray-100 text-lg capitalize">{planActual}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-6 text-sm">
+              {bots[0]?.nombre && (
+                <div>
+                  <p className="text-xs text-gray-500">Bot</p>
+                  <p className="text-gray-200 font-medium">{bots[0].nombre}</p>
+                </div>
+              )}
+              {bots[0]?.numero_display && (
+                <div>
+                  <p className="text-xs text-gray-500">Número WhatsApp</p>
+                  <p className="text-gray-200 font-mono">{bots[0].numero_display}</p>
+                </div>
+              )}
+              {venceEn && (
+                <div>
+                  <p className="text-xs text-gray-500">Vence el</p>
+                  <p className="text-amber-400 font-medium">{new Date(venceEn).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loading && (
+        <div className="py-4 flex items-center justify-center gap-2 text-gray-500 text-sm">
+          <Loader2 size={15} className="animate-spin" /> Cargando tu plan...
+        </div>
+      )}
+
+      {/* Cards de planes */}
       <div className="grid md:grid-cols-3 gap-6 items-start">
-        {PLANES.map(plan => {
+        {PLANES_INFO.map(plan => {
           const c = COLOR_MAP[plan.color]
           const Icon = plan.icon
+          const esPlanActual = planActual === plan.id
           return (
             <div
               key={plan.id}
-              className={`relative bg-gray-900 border border-gray-800 rounded-2xl p-6 ring-1 ${c.ring} ${plan.popular ? 'scale-105 shadow-2xl shadow-brand-500/10' : ''} transition-transform`}
+              className={`relative bg-gray-900 border rounded-2xl p-6 ring-1 transition-all ${
+                esPlanActual
+                  ? `${c.activeBorder} border-2 ring-0 shadow-lg`
+                  : `border-gray-800 ${c.ring} ${plan.popular ? 'scale-105 shadow-2xl shadow-brand-500/10' : ''}`
+              }`}
             >
+              {/* Badge plan actual */}
+              {esPlanActual && (
+                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-brand-500 text-white text-xs font-semibold px-4 py-1 rounded-full flex items-center gap-1">
+                  <BadgeCheck size={11} /> Tu plan actual
+                </div>
+              )}
+
               {/* Badge popular */}
-              {plan.popular && (
+              {plan.popular && !esPlanActual && (
                 <div className={`absolute -top-3.5 left-1/2 -translate-x-1/2 ${c.badge} text-xs font-semibold px-4 py-1 rounded-full`}>
                   {plan.badge}
                 </div>
@@ -155,21 +230,27 @@ export function Planes() {
               </ul>
 
               {/* CTA */}
-              <a
-                href={plan.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-medium text-sm transition-colors ${c.btn}`}
-              >
-                {plan.id === 'lifetime' && <MessageCircle size={16} />}
-                {plan.cta}
-              </a>
+              {esPlanActual ? (
+                <div className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-medium text-sm bg-gray-800 text-gray-400 cursor-default">
+                  <BadgeCheck size={15} /> Plan activo
+                </div>
+              ) : (
+                <a
+                  href={plan.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg font-medium text-sm transition-colors ${c.btn}`}
+                >
+                  {plan.id === 'lifetime' && <MessageCircle size={16} />}
+                  {esCliente && planActual ? 'Actualizar a ' + plan.nombre : plan.cta}
+                </a>
+              )}
             </div>
           )
         })}
       </div>
 
-      {/* Footer note */}
+      {/* Footer */}
       <div className="card text-center py-8">
         <MessageCircle size={28} className="mx-auto text-brand-400 mb-3" />
         <p className="text-gray-300 font-medium mb-1">¿Tienes preguntas?</p>
