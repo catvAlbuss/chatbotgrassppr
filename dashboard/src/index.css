@@ -35,3 +35,24 @@
     @apply border-b border-gray-800 hover:bg-gray-800/50 transition-colors;
   }
 }
+
+/* ── SweetAlert2 dark theme ── */
+.swal-dark-popup {
+  background: #111827 !important;
+  border: 1px solid #1f2937 !important;
+  border-radius: 1rem !important;
+  box-shadow: 0 25px 60px -12px rgba(0,0,0,.8) !important;
+}
+.swal-dark-title  { color: #f9fafb !important; font-size: 1.125rem !important; }
+.swal-dark-html   { color: #9ca3af !important; font-size: .875rem !important; }
+.swal-dark-timer  { background: #10b981 !important; }
+.swal-dark-confirm {
+  background: #10b981 !important;
+  border-radius: .5rem !important;
+  font-weight: 600 !important;
+  padding: .5rem 1.25rem !important;
+}
+.swal2-icon.swal2-error { border-color: #ef4444 !important; }
+.swal2-icon.swal2-error [class^=swal2-x-mark-line] { background: #ef4444 !important; }
+.swal2-icon.swal2-warning { border-color: #f59e0b !important; color: #f59e0b !important; }
+.swal2-icon.swal2-info    { border-color: #3b82f6 !important; color: #3b82f6 !important; }

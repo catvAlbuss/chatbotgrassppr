@@ -247,6 +247,64 @@ async function run() {
       console.warn(`  ⚠️  Migración de roles legacy: ${e.message}`);
     }
 
+    // 006: clientes que contratan la plataforma
+    console.log('\n--- Clientes del sistema ---');
+    await conn.execute(`
+      CREATE TABLE IF NOT EXISTS \`clientes_sistema\` (
+        \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+        \`razon_social\` VARCHAR(160) NOT NULL,
+        \`nombre_comercial\` VARCHAR(120),
+        \`tipo_documento\` ENUM('RUC','DNI','CE','OTRO') NOT NULL DEFAULT 'RUC',
+        \`numero_documento\` VARCHAR(20) NOT NULL,
+        \`contacto_nombre\` VARCHAR(120),
+        \`contacto_email\` VARCHAR(160),
+        \`contacto_telefono\` VARCHAR(25),
+        \`estado\` ENUM('activo','suspendido') NOT NULL DEFAULT 'activo',
+        \`notas\` TEXT,
+        \`creado_en\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \`actualizado\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY \`uniq_cliente_sistema_documento\` (\`tipo_documento\`, \`numero_documento\`),
+        INDEX \`idx_cliente_sistema_estado\` (\`estado\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    console.log('  ✅ clientes_sistema');
+
+    const alters006 = [
+      [`ALTER TABLE \`usuarios\` ADD COLUMN \`cliente_sistema_id\` INT NULL AFTER \`persona_id\``, 'usuarios.cliente_sistema_id'],
+      [`ALTER TABLE \`bots\` ADD COLUMN \`cliente_sistema_id\` INT NULL AFTER \`id\``, 'bots.cliente_sistema_id'],
+      [`ALTER TABLE \`usuarios\` ADD CONSTRAINT \`fk_usuarios_cliente_sistema\` FOREIGN KEY (\`cliente_sistema_id\`) REFERENCES \`clientes_sistema\`(\`id\`) ON DELETE SET NULL`, 'usuarios FK cliente_sistema'],
+      [`ALTER TABLE \`bots\` ADD CONSTRAINT \`fk_bots_cliente_sistema\` FOREIGN KEY (\`cliente_sistema_id\`) REFERENCES \`clientes_sistema\`(\`id\`) ON DELETE SET NULL`, 'bots FK cliente_sistema'],
+    ];
+    for (const [sql, label] of alters006) {
+      try {
+        await conn.execute(sql);
+        console.log(`  ✅ ${label}`);
+      } catch (e) {
+        if (['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME', 'ER_FK_DUP_NAME'].includes(e.code) || e.message.includes('Duplicate')) {
+          console.log(`  ⏭️  ${label} ya existe`);
+        } else {
+          console.warn(`  ⚠️  ${label}: ${e.message}`);
+        }
+      }
+    }
+
+    // ── 007: plan por cliente del sistema ─────────────────────
+    console.log('\n--- Plan por cliente ---');
+    const alters007 = [
+      [`ALTER TABLE \`clientes_sistema\` ADD COLUMN \`plan\` ENUM('demo','mensual','anual','lifetime') NOT NULL DEFAULT 'demo' AFTER \`estado\``, 'clientes_sistema.plan'],
+      [`ALTER TABLE \`clientes_sistema\` ADD COLUMN \`plan_inicio\` DATE NULL AFTER \`plan\``, 'clientes_sistema.plan_inicio'],
+      [`ALTER TABLE \`clientes_sistema\` ADD COLUMN \`plan_expira\` DATE NULL AFTER \`plan_inicio\``, 'clientes_sistema.plan_expira'],
+    ];
+    for (const [sql, label] of alters007) {
+      try {
+        await conn.execute(sql);
+        console.log(`  ✅ ${label}`);
+      } catch (e) {
+        if (e.code === 'ER_DUP_FIELDNAME') console.log(`  ⏭️  ${label} ya existe`);
+        else console.warn(`  ⚠️  ${label}: ${e.message}`);
+      }
+    }
+
     console.log('\n🎉 Migración completada exitosamente\n');
 
   } catch (err) {

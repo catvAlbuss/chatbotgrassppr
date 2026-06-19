@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Search, Filter, RefreshCw } from 'lucide-react'
+import { Search, Filter } from 'lucide-react'
 import { Badge } from '../components/Badge.jsx'
 import { api } from '../lib/api.js'
 
@@ -20,15 +20,16 @@ export function Reservas() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { cargar() }, [])
+  useEffect(() => {
+    cargar()
+    const id = setInterval(cargar, 30_000)
+    return () => clearInterval(id)
+  }, [estado, fecha])
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-100">Reservas</h1>
-        <button onClick={cargar} className="btn-secondary flex items-center gap-2 text-sm">
-          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Actualizar
-        </button>
       </div>
 
       {/* Filtros */}

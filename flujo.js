@@ -8,7 +8,7 @@ import {
 } from './whatsapp.js';
 import { buscarCanchas } from './search.js';
 import { preguntarIA } from './openai.js';
-import { getMensajePago, getUrlQRYape } from './qr.js';
+import { getMensajePago, getUrlQRYape, getUrlQRPlin } from './qr.js';
 import {
   getEstado, setEstado, resetEstado,
   getSlotsDisponibles, isSlotOcupado, intentarReservarSlot, marcarSlotOcupado,
@@ -25,7 +25,8 @@ import {
 // ─── HELPERS DE CONTEXTO ─────────────────────────────────
 // Lee valores de la config del bot con fallback a los defaults originales
 function cfg(ctx, key, fallback) {
-  return ctx?.config?.[key] ?? fallback;
+  const value = String(key).split('.').reduce((current, part) => current?.[part], ctx?.config);
+  return value ?? fallback;
 }
 
 // ─── MENÚ PRINCIPAL ──────────────────────────────────────
@@ -561,8 +562,9 @@ async function procesarBoton(phone, buttonId, conv, ctx) {
   if (buttonId === 'CONFIRMAR_SI') {
     const datos      = conv.datos;
     const reservaId  = await crearReserva(phone, datos, botId);
+    const timeoutPago = Math.min(Math.max(Number(ctx.config?.timeout_pago_minutos) || 10, 5), 60);
     await setEstado(phone, 'ESPERANDO_COMPROBANTE', { reservaId }, botId);
-    await registrarPagoPendiente(reservaId, phone, 10);
+    await registrarPagoPendiente(reservaId, phone, timeoutPago);
 
     pagosPendientes[reservaId] = {
       phone,
@@ -577,15 +579,19 @@ async function procesarBoton(phone, buttonId, conv, ctx) {
           );
         }
         delete pagosPendientes[reservaId];
-      }, 10 * 60 * 1000)
+      }, timeoutPago * 60 * 1000)
     };
 
-    const mensajePago = getMensajePago(reservaId, datos.montoReserva, `${datos.nombres} ${datos.apellidos}`);
+    const mensajePago = getMensajePago(reservaId, datos.montoReserva, `${datos.nombres} ${datos.apellidos}`, ctx.config);
     await enviarTexto(phone, `🎉 *¡Reserva registrada!*\n\n📋 ID: *${reservaId}*\n\nAhora realiza el pago:`, ctx);
     await enviarTexto(phone, mensajePago, ctx);
 
-    const qrUrl = getUrlQRYape();
+    const qrUrl = getUrlQRYape(ctx.config);
     if (qrUrl) await enviarImagen(phone, qrUrl, `📱 QR Yape · ${reservaId} · S/. ${datos.montoReserva}`, ctx);
+    const qrPlinUrl = getUrlQRPlin(ctx.config);
+    if (qrPlinUrl && qrPlinUrl !== qrUrl) {
+      await enviarImagen(phone, qrPlinUrl, `📱 QR Plin · ${reservaId} · S/. ${datos.montoReserva}`, ctx);
+    }
 
     await enviarTexto(phone, `📝 Escríbenos tu *número de operación* ahora 👇\n\n_(Luego envía la captura del comprobante)_`, ctx);
     return;
@@ -661,8 +667,9 @@ export async function procesarComandoAdmin(phone, mensaje, ctx = {}) {
     }
 
     await enviarTexto(phone, `✅ Reserva *${reservaId}* APROBADA.`, ctx);
+    const confirmacion = cfg(ctx, 'mensajes.confirmacion', '🎉 *¡RESERVA CONFIRMADA!*\n\n✅ Pago verificado.');
     await enviarTexto(reserva.phone,
-      `🎉 *¡RESERVA CONFIRMADA!*\n\n✅ Pago verificado.\n\n📋 ${reservaId}\n🏟️ ${reserva.tipoCancha}\n📅 ${reserva.fechaDisplay}\n⏰ ${horas?.join(', ')}\n\n¡Te esperamos! ⚽🌿`, ctx
+      `${confirmacion}\n\n📋 ${reservaId}\n🏟️ ${reserva.tipoCancha}\n📅 ${reserva.fechaDisplay}\n⏰ ${horas?.join(', ')}`, ctx
     );
     return true;
   }
@@ -673,9 +680,8 @@ export async function procesarComandoAdmin(phone, mensaje, ctx = {}) {
     if (!reserva) { await enviarTexto(phone, `❌ Reserva ${reservaId} no encontrada.`, ctx); return true; }
     await actualizarReserva(reservaId, { estado: 'RECHAZADA' });
     await enviarTexto(phone, `❌ Reserva *${reservaId}* RECHAZADA.`, ctx);
-    await enviarTexto(reserva.phone,
-      `❌ *Pago rechazado*\n\nNo pudimos confirmar tu pago de ${reservaId}.\n\nEscribe *MENU* para intentar de nuevo. 😊`, ctx
-    );
+    const pagoRechazado = cfg(ctx, 'mensajes.pago_rechazado', '❌ *Pago rechazado*\n\nNo pudimos confirmar tu pago.\n\nEscribe *MENU* para intentar de nuevo. 😊');
+    await enviarTexto(reserva.phone, `${pagoRechazado}\n\n📋 ${reservaId}`, ctx);
     return true;
   }
 

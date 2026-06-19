@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Plus, Bot, Edit2, Trash2, Power, Loader2, X, CheckCircle, Wifi, WifiOff, Clock, PhoneCall, MessageSquare, Link2, Users } from 'lucide-react'
+import { Plus, Bot, Edit2, Trash2, Power, Loader2, X, CheckCircle, Wifi, WifiOff, Clock, PhoneCall, MessageSquare, Link2, Settings, CalendarCheck } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { ConectarWhatsApp } from './ConectarWhatsApp.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
+import { Link } from 'react-router-dom'
 
 const TIPOS = {
   grass:      { emoji: '🌿', label: 'Grass Sintético',  color: 'brand',  desc: 'Reservas de canchas por hora, cobro Yape/Plin' },
@@ -10,21 +11,11 @@ const TIPOS = {
   restaurant: { emoji: '🍽️', label: 'Restaurant',       color: 'amber', desc: 'Reservas de mesa, delivery y pedidos' },
 }
 
-const PLANES = {
-  demo:     { label: 'Demo',        color: 'text-gray-400 bg-gray-700' },
-  mensual:  { label: 'Mensual',     color: 'text-blue-400 bg-blue-500/15' },
-  anual:    { label: 'Anual',       color: 'text-brand-400 bg-brand-500/15' },
-  lifetime: { label: 'De por vida', color: 'text-amber-400 bg-amber-500/15' },
-}
-
 const COLOR = {
   brand: { badge: 'bg-brand-500/10 text-brand-400 border-brand-500/20', ring: 'ring-brand-500/20' },
   blue:  { badge: 'bg-blue-500/10 text-blue-400 border-blue-500/20',    ring: 'ring-blue-500/20'  },
   amber: { badge: 'bg-amber-500/10 text-amber-400 border-amber-500/20', ring: 'ring-amber-500/20' },
 }
-
-// Los planes anual y lifetime permiten conectar número propio
-const PLAN_PUEDE_PROPIO = ['anual', 'lifetime']
 
 function EstadoConexionBadge({ bot }) {
   if (bot.estado_conexion === 'activo' && bot.numero_display) {
@@ -56,7 +47,7 @@ function EstadoConexionBadge({ bot }) {
 }
 
 export function MisBots() {
-  const { esAdminBot, esAdmin, esCliente } = useAuth()
+  const { esAdminBot, esAdmin, esCliente, esDemo, plan } = useAuth()
   const [bots, setBots]         = useState([])
   const [loading, setLoading]   = useState(true)
   const [modal, setModal]       = useState(null)
@@ -95,6 +86,13 @@ export function MisBots() {
 
   return (
     <div className="space-y-6">
+      {/* Banner plan demo */}
+      {esDemo && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-400">
+          <span className="text-base leading-none mt-0.5">🧪</span>
+          <p>Estás en el <strong>plan Demo</strong>. Puedes ver tu bot de prueba pero no editar su configuración. Contacta al administrador para activar un plan completo.</p>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-100">{esCliente ? 'Mis Bots' : 'Gestión de Bots'}</h1>
@@ -109,18 +107,6 @@ export function MisBots() {
         )}
       </div>
 
-      {/* Banner demo para clientes */}
-      {esCliente && bots.some(b => b.plan === 'demo') && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 flex items-start gap-3">
-          <span className="text-amber-400 text-lg mt-0.5">🎯</span>
-          <div>
-            <p className="text-amber-300 font-medium text-sm">Bot en modo Demo</p>
-            <p className="text-amber-400/80 text-xs mt-0.5">
-              Estás probando el bot. Para activarlo con tu propio número de WhatsApp, actualiza tu plan.
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Tipos disponibles — solo para admin que puede crear bots */}
       {esAdminBot && (
@@ -145,20 +131,97 @@ export function MisBots() {
       ) : bots.length === 0 ? (
         <div className="card py-12 text-center">
           <Bot size={40} className="mx-auto text-gray-700 mb-3" />
-          <p className="text-gray-400 font-medium">Aún no tienes bots creados</p>
-          <p className="text-gray-600 text-sm mt-1 mb-4">Crea tu primer bot para comenzar</p>
-          <button onClick={() => setModal('crear')} className="btn-primary inline-flex items-center gap-2">
-            <Plus size={16} /> Crear primer bot
-          </button>
+          {esCliente ? (
+            <>
+              <p className="text-gray-400 font-medium">No tienes bots asignados aún</p>
+              <p className="text-gray-600 text-sm mt-1">El administrador asignará tu bot cuando active tu cuenta.</p>
+            </>
+          ) : (
+            <>
+              <p className="text-gray-400 font-medium">Aún no hay bots creados</p>
+              <p className="text-gray-600 text-sm mt-1 mb-4">Crea el primer bot para comenzar</p>
+              <button onClick={() => setModal('crear')} className="btn-primary inline-flex items-center gap-2">
+                <Plus size={16} /> Crear primer bot
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <div className="grid gap-4">
           {bots.map(bot => {
             const tipo = TIPOS[bot.tipo] || TIPOS.grass
-            const plan = PLANES[bot.plan] || PLANES.demo
             const c    = COLOR[tipo.color]
-            const puedeConectarPropio = PLAN_PUEDE_PROPIO.includes(bot.plan)
             const yaConectado = bot.estado_conexion === 'activo'
+
+            // ── Tarjeta de bot en plan Demo ──────────────────────────────
+            if (esDemo) {
+              return (
+                <div key={bot.id} className="relative overflow-hidden rounded-2xl border border-amber-500/20 bg-gray-900">
+                  {/* Franja demo */}
+                  <div className="flex items-center gap-2 bg-amber-500/8 border-b border-amber-500/15 px-5 py-2.5">
+                    <span className="text-xs font-semibold text-amber-400 tracking-wide uppercase">🧪 Bot de demostración</span>
+                    <span className="ml-auto text-xs text-amber-400/60">Solo vista previa</span>
+                  </div>
+
+                  <div className="p-5 flex flex-col sm:flex-row gap-5">
+                    {/* Avatar bot */}
+                    <div className={`w-14 h-14 flex-shrink-0 rounded-2xl flex items-center justify-center text-3xl border ${c.badge} opacity-70`}>
+                      {tipo.emoji}
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 space-y-3">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-semibold text-gray-100">{bot.nombre}</h3>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${c.badge}`}>{tipo.label}</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {bot.admin_phone ? `Número admin: ${bot.admin_phone}` : 'Sin número configurado aún'}
+                        </p>
+                      </div>
+
+                      {/* Funciones bloqueadas */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {[
+                          { label: 'Editar configuración del bot',   bloqueado: true  },
+                          { label: 'Ver reservas y pagos',           bloqueado: true  },
+                          { label: 'Conectar número de WhatsApp',    bloqueado: true  },
+                          { label: 'Acceso al panel del bot',        bloqueado: false },
+                        ].map(f => (
+                          <div key={f.label} className="flex items-center gap-2 text-xs">
+                            {f.bloqueado
+                              ? <span className="w-3.5 h-3.5 flex-shrink-0 rounded-full bg-gray-700 flex items-center justify-center text-gray-500">✕</span>
+                              : <span className="w-3.5 h-3.5 flex-shrink-0 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-400">✓</span>
+                            }
+                            <span className={f.bloqueado ? 'text-gray-600 line-through' : 'text-gray-400'}>{f.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* CTA demo */}
+                    <div className="flex-shrink-0 flex flex-col items-center justify-center gap-3 sm:pl-4 sm:border-l sm:border-gray-800 text-center min-w-[130px]">
+                      <Link
+                        to={`/admin/bots/${bot.id}`}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gray-700 hover:bg-gray-600 text-gray-200 text-xs font-semibold transition-colors w-full justify-center"
+                      >
+                        Ver resumen
+                      </Link>
+                      <Link
+                        to="/admin/planes"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold transition-colors w-full justify-center"
+                      >
+                        Activar plan
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+
+            // ── Tarjeta normal (mensual / anual / lifetime) ───────────────
+            const puedeConectarPropio = esCliente && (plan === 'anual' || plan === 'lifetime')
             return (
               <div key={bot.id} className={`card ring-1 ${c.ring} ${!bot.activo ? 'opacity-60' : ''}`}>
                 <div className="flex flex-wrap items-start justify-between gap-4">
@@ -170,24 +233,21 @@ export function MisBots() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-semibold text-gray-100">{bot.nombre}</h3>
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium border ${c.badge}`}>{tipo.label}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${plan.color}`}>{plan.label}</span>
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${bot.activo ? 'bg-brand-500/15 text-brand-400' : 'bg-gray-700 text-gray-500'}`}>
                           {bot.activo ? '● Activo' : '● Inactivo'}
                         </span>
                       </div>
 
-                      {/* Estado de conexión WhatsApp */}
                       <EstadoConexionBadge bot={bot} />
 
-                      {/* Info secundaria */}
                       <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500">
+                        {esAdminBot && <span>Cliente: <span className={bot.cliente_sistema ? 'text-blue-400' : 'text-amber-400'}>{bot.cliente_nombre_comercial || bot.cliente_sistema || 'Sin asignar'}</span></span>}
                         {bot.admin_phone && <span>Admin: <span className="font-mono text-gray-400">{bot.admin_phone}</span></span>}
-                        {bot.plan_expira && <span>Vence: <span className="text-amber-400">{bot.plan_expira}</span></span>}
                         {bot.tipo_conexion === 'gestionado' && <span className="text-gray-600">Número gestionado por plataforma</span>}
                         {bot.tipo_conexion === 'propio'     && <span className="text-gray-600">Número propio conectado</span>}
                       </div>
 
-                      {/* CTA: conectar número propio si es anual/lifetime y no tiene conexión */}
+                      {/* CTA: conectar número propio si es anual/lifetime */}
                       {puedeConectarPropio && !yaConectado && (
                         <button
                           onClick={() => setConectar(bot)}
@@ -197,7 +257,7 @@ export function MisBots() {
                         </button>
                       )}
 
-                      {/* CTA adminBot+: asignar número directamente */}
+                      {/* CTA adminBot+: asignar número */}
                       {!yaConectado && esAdminBot && (
                         <button
                           onClick={() => setAsignar(bot)}
@@ -207,8 +267,8 @@ export function MisBots() {
                         </button>
                       )}
 
-                      {/* CTA: plan mensual esperando activación */}
-                      {bot.plan === 'mensual' && bot.estado_conexion === 'pendiente' && (
+                      {/* Espera activación mensual */}
+                      {esCliente && plan === 'mensual' && bot.estado_conexion === 'pendiente' && (
                         <p className="text-xs text-amber-400 mt-1">
                           ⏳ Tu número será asignado en las próximas 24 h. Te avisaremos por WhatsApp.
                         </p>
@@ -218,6 +278,18 @@ export function MisBots() {
 
                   {/* Acciones */}
                   <div className="flex items-center gap-2">
+                    {/* Sistema del bot (reservas, pagos, stats) */}
+                    <Link
+                      to={`/admin/bots/${bot.id}`}
+                      className="p-2 rounded-lg text-gray-400 hover:text-brand-400 hover:bg-brand-500/10 transition-colors"
+                      title="Sistema del bot (reservas y pagos)"
+                    >
+                      <CalendarCheck size={16} />
+                    </Link>
+                    {/* Configuración completa */}
+                    <Link to={`/admin/mi-config?bot=${encodeURIComponent(bot.id)}`} className="p-2 rounded-lg text-gray-400 hover:text-brand-400 hover:bg-brand-500/10 transition-colors" title="Configuración completa del bot">
+                      <Settings size={16} />
+                    </Link>
                     {yaConectado && bot.numero_display && (
                       <a
                         href={`https://wa.me/${bot.numero_display.replace(/\D/g, '')}?text=Hola`}
@@ -231,13 +303,11 @@ export function MisBots() {
                     <button onClick={() => setModal(bot)} className="p-2 rounded-lg text-gray-400 hover:text-gray-200 hover:bg-gray-800 transition-colors" title="Editar configuración">
                       <Edit2 size={16} />
                     </button>
-                    {/* Toggle activo: solo administrador+ */}
                     {esAdmin && (
                       <button onClick={() => toggleActivo(bot)} className={`p-2 rounded-lg transition-colors ${bot.activo ? 'text-brand-400 hover:bg-brand-500/10' : 'text-gray-500 hover:bg-gray-800'}`} title={bot.activo ? 'Desactivar bot' : 'Activar bot'}>
                         <Power size={16} />
                       </button>
                     )}
-                    {/* Eliminar: solo adminBot+ */}
                     {esAdminBot && (
                       <button onClick={() => setConfirm(bot.id)} className="p-2 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Eliminar bot">
                         <Trash2 size={16} />
@@ -376,20 +446,25 @@ function AsignarNumeroModal({ bot, onClose, onAsignado }) {
 
 // ─── MODAL CREAR / EDITAR BOT ────────────────────────────────
 function BotModal({ bot, onClose, onSaved }) {
-  const { esAdminBot, esCliente } = useAuth()
+  const { esAdminBot, esCliente, plan: planCliente } = useAuth()
   const isNew = !bot
-  const [paso, setPaso]   = useState(1)   // 1=tipo, 2=negocio, 3=plan
+  const [paso, setPaso]   = useState(1)   // 1=tipo, 2=negocio
   const [form, setForm]   = useState({
+    cliente_sistema_id: bot?.cliente_sistema_id || '',
     nombre:      bot?.nombre      || '',
     tipo:        bot?.tipo        || 'grass',
     admin_phone: bot?.admin_phone || '',
     plan:        bot?.plan        || 'demo',
-    plan_inicio: bot?.plan_inicio || '',
-    plan_expira: bot?.plan_expira || '',
+    renovar_plan: false,
     config: bot?.config || {}
   })
   const [saving, setSaving] = useState(false)
   const [saved,  setSaved]  = useState(false)
+  const [clientesSistema, setClientesSistema] = useState([])
+
+  useEffect(() => {
+    if (esAdminBot) api.clientesSistema().then(setClientesSistema).catch(console.error)
+  }, [esAdminBot])
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })) }
   function setCfg(k, v) { setForm(f => ({ ...f, config: { ...f.config, [k]: v } })) }
@@ -412,7 +487,7 @@ function BotModal({ bot, onClose, onSaved }) {
     }
   }
 
-  const totalPasos = isNew ? 3 : 1
+  const totalPasos = isNew ? 2 : 1
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -429,14 +504,14 @@ function BotModal({ bot, onClose, onSaved }) {
         {/* Progress (solo al crear) */}
         {isNew && (
           <div className="flex items-center gap-2 mb-6 mt-3">
-            {[1, 2, 3].map(n => (
+            {[1, 2].map(n => (
               <div key={n} className="flex items-center gap-2 flex-1">
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
                   paso > n ? 'bg-brand-500 text-white' : paso === n ? 'bg-brand-500/20 text-brand-400 ring-1 ring-brand-500' : 'bg-gray-800 text-gray-600'
                 }`}>
                   {paso > n ? <CheckCircle size={14} /> : n}
                 </div>
-                {n < 3 && <div className={`h-0.5 flex-1 rounded transition-colors ${paso > n ? 'bg-brand-500' : 'bg-gray-800'}`} />}
+                {n < 2 && <div className={`h-0.5 flex-1 rounded transition-colors ${paso > n ? 'bg-brand-500' : 'bg-gray-800'}`} />}
               </div>
             ))}
           </div>
@@ -474,6 +549,18 @@ function BotModal({ bot, onClose, onSaved }) {
           {/* ── Paso 2 / Editar: Datos del negocio ── */}
           {(!isNew || paso === 2) && (
             <>
+              {esAdminBot && (
+                <div>
+                  <label className="label">Cliente del sistema</label>
+                  <select className="input" value={form.cliente_sistema_id} onChange={e => set('cliente_sistema_id', e.target.value)}>
+                    <option value="">Sin asignar</option>
+                    {clientesSistema.map(cliente => (
+                      <option key={cliente.id} value={cliente.id}>{cliente.nombre_comercial || cliente.razon_social}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-600 mt-1">Define a qué entorno pertenece este bot.</p>
+                </div>
+              )}
               <div>
                 <label className="label">Nombre de tu negocio *</label>
                 <input className="input" required value={form.nombre} onChange={e => set('nombre', e.target.value)} placeholder="Ej: Grass Los Pinos" />
@@ -514,44 +601,44 @@ function BotModal({ bot, onClose, onSaved }) {
                 </>
               )}
 
-              {/* Plan y fechas: solo para adminBot+ */}
+              {/* Plan y vigencia automática: solo para adminBot+ */}
               {!isNew && esAdminBot && (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="label">Plan</label>
-                      <select className="input" value={form.plan} onChange={e => set('plan', e.target.value)}>
-                        <option value="demo">Demo</option>
-                        <option value="mensual">Mensual</option>
-                        <option value="anual">Anual</option>
-                        <option value="lifetime">De por vida</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="label">Vence el</label>
-                      <input className="input" type="date" value={form.plan_expira} onChange={e => set('plan_expira', e.target.value)} />
-                    </div>
-                  </div>
+                <div className="space-y-3 rounded-xl border border-gray-700 bg-gray-800/50 p-4">
                   <div>
-                    <label className="label">Inicio del plan</label>
-                    <input className="input" type="date" value={form.plan_inicio} onChange={e => set('plan_inicio', e.target.value)} />
+                    <label className="label">Plan</label>
+                    <select className="input" value={form.plan} onChange={e => set('plan', e.target.value)}>
+                      <option value="demo">Demo · 5 días</option>
+                      <option value="mensual">Mensual · 30 días</option>
+                      <option value="anual">Anual · 365 días</option>
+                      <option value="lifetime">De por vida</option>
+                    </select>
                   </div>
-                </>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div><p className="text-gray-500">Inicio actual</p><p className="mt-0.5 text-gray-300">{bot?.plan_inicio || 'Sin asignar'}</p></div>
+                    <div><p className="text-gray-500">Vencimiento actual</p><p className="mt-0.5 text-gray-300">{bot?.plan_expira || (bot?.plan === 'lifetime' ? 'Sin vencimiento' : 'Sin asignar')}</p></div>
+                  </div>
+                  <label className="flex cursor-pointer items-start gap-2 text-xs text-gray-400">
+                    <input type="checkbox" className="mt-0.5 accent-brand-500" checked={form.renovar_plan}
+                      onChange={e => set('renovar_plan', e.target.checked)} />
+                    <span>Renovar desde hoy aunque el plan no cambie. Las fechas se calcularán automáticamente.</span>
+                  </label>
+                </div>
               )}
-              {/* Para clientes: mostrar plan actual (solo lectura) */}
-              {!isNew && esCliente && bot?.plan && (
+              {/* Para clientes: mostrar plan del cliente (solo lectura) */}
+              {!isNew && esCliente && planCliente && (
                 <div className="bg-gray-800 rounded-lg px-4 py-3 flex items-center justify-between">
-                  <span className="text-sm text-gray-400">Plan activo</span>
-                  <span className={`text-sm font-semibold ${PLANES[bot.plan]?.color || 'text-gray-300'}`}>
-                    {PLANES[bot.plan]?.label || bot.plan}
-                  </span>
+                  <span className="text-sm text-gray-400">Tu plan actual</span>
+                  <span className="text-sm font-semibold capitalize text-brand-300">{planCliente}</span>
                 </div>
               )}
 
               {isNew ? (
                 <div className="flex gap-3 pt-2">
                   <button type="button" onClick={() => setPaso(1)} className="btn-secondary flex-1">← Atrás</button>
-                  <button type="button" onClick={() => setPaso(3)} className="btn-primary flex-1">Siguiente →</button>
+                  <button type="submit" disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                    {saving ? <Loader2 size={16} className="animate-spin" /> : saved ? <CheckCircle size={16} /> : null}
+                    {saving ? 'Creando...' : saved ? '¡Creado!' : 'Crear bot'}
+                  </button>
                 </div>
               ) : (
                 <div className="flex gap-3 pt-2">
@@ -565,60 +652,6 @@ function BotModal({ bot, onClose, onSaved }) {
             </>
           )}
 
-          {/* ── Paso 3: Plan (solo al crear) ── */}
-          {(isNew && paso === 3) && (
-            <>
-              <p className="text-gray-400 text-sm mb-1">Elige tu plan</p>
-              <div className="space-y-2">
-                {[
-                  { value: 'demo',     label: 'Demo gratuito',   desc: 'Prueba el bot, número gestionado, límite 50 conversaciones/mes', color: 'gray' },
-                  { value: 'mensual',  label: 'Mensual — S/. 50/mes', desc: 'Número gestionado por la plataforma, soporte básico', color: 'blue' },
-                  { value: 'anual',    label: 'Anual — S/. 500/año',  desc: 'Conecta tu propio número de WhatsApp Business, sin límites', color: 'brand' },
-                  { value: 'lifetime', label: 'De por vida',           desc: 'Tu propio número + soporte prioritario + actualizaciones', color: 'amber' },
-                ].map(p => (
-                  <button
-                    key={p.value} type="button"
-                    onClick={() => set('plan', p.value)}
-                    className={`w-full text-left p-3.5 rounded-xl border transition-all ${
-                      form.plan === p.value
-                        ? 'border-brand-500 bg-brand-500/10'
-                        : 'border-gray-700 bg-gray-800/50 hover:border-gray-600'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className={`text-sm font-semibold ${form.plan === p.value ? 'text-brand-300' : 'text-gray-200'}`}>{p.label}</span>
-                      {PLAN_PUEDE_PROPIO.includes(p.value) && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">Número propio</span>
-                      )}
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1">{p.desc}</p>
-                  </button>
-                ))}
-              </div>
-
-              {/* Info según plan elegido */}
-              {(form.plan === 'mensual' || form.plan === 'demo') && (
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 text-xs text-blue-300">
-                  <p className="font-semibold mb-1">📞 ¿Cómo funciona el número?</p>
-                  <p>Con el plan {form.plan === 'demo' ? 'demo' : 'mensual'}, nosotros asignamos un número de WhatsApp a tu bot. Nuestro equipo lo activará en las próximas 24 horas y te avisará por WhatsApp.</p>
-                </div>
-              )}
-              {PLAN_PUEDE_PROPIO.includes(form.plan) && (
-                <div className="bg-brand-500/10 border border-brand-500/20 rounded-xl p-3 text-xs text-brand-300">
-                  <p className="font-semibold mb-1">📱 Tu propio número</p>
-                  <p>Después de crear el bot, podrás conectar tu número de WhatsApp Business en solo 4 pasos guiados. No necesitas saber de programación.</p>
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setPaso(2)} className="btn-secondary flex-1">← Atrás</button>
-                <button type="submit" disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2">
-                  {saving ? <Loader2 size={16} className="animate-spin" /> : saved ? <CheckCircle size={16} /> : null}
-                  {saving ? 'Creando...' : saved ? '¡Creado!' : 'Crear bot'}
-                </button>
-              </div>
-            </>
-          )}
 
         </form>
       </div>

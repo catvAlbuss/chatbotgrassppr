@@ -21,6 +21,28 @@ async function request(method, path, body) {
   }
 
   const data = await res.json();
+
+  if (res.status === 403 && data?.error?.toLowerCase().includes('suspendido')) {
+    localStorage.removeItem('gb_token');
+    const { default: Swal } = await import('sweetalert2');
+    await Swal.fire({
+      icon: 'error',
+      title: 'Cuenta suspendida',
+      html: `<p>${data.error}</p><p style="margin-top:.5rem;font-size:.75rem;color:#6b7280">Serás redirigido al inicio de sesión automáticamente.</p>`,
+      timer: 6000,
+      timerProgressBar: true,
+      showConfirmButton: true,
+      confirmButtonText: 'Salir ahora',
+      confirmButtonColor: '#ef4444',
+      background: '#111827',
+      color: '#f9fafb',
+      customClass: { popup: 'swal-dark-popup', title: 'swal-dark-title', timerProgressBar: 'swal-dark-timer' },
+    });
+    sessionStorage.setItem('gb_suspension_alert', data.error);
+    window.location.href = '/admin/login';
+    throw new Error(data.error);
+  }
+
   if (!res.ok) throw new Error(data.error || 'Error del servidor');
   return data;
 }
@@ -35,6 +57,9 @@ export const api = {
   config:      ()        => request('GET',  '/config'),
   saveConfig:  (cfg)     => request('PUT',  '/config', cfg),
   clientes:    ()        => request('GET',  '/clientes'),
+  clientesSistema:       ()           => request('GET',  '/clientes-sistema'),
+  crearClienteSistema:   (data)       => request('POST', '/clientes-sistema', data),
+  actualizarClienteSistema: (id, data) => request('PUT', `/clientes-sistema/${id}`, data),
   slots:       (fecha)   => request('GET',  `/slots/${fecha}`),
   usuarios:    ()        => request('GET',  '/usuarios'),
   crearUsuario:(data)    => request('POST', '/usuarios', data),
@@ -54,7 +79,9 @@ export const api = {
   asignarCliente:    (id, data) => request('POST', `/bots/${id}/asignar-cliente`, data),
   verificarRegistro: (id, data) => request('POST', `/bots/${id}/verificar-registro`, data),
   // estadísticas
-  statsAdmin: () => request('GET', '/stats/admin'),
+  statsAdmin:  () => request('GET', '/stats/admin'),
+  statsBot:    (id) => request('GET', `/bots/${id}/stats`),
+  reservasBot: (id, q = {}) => request('GET', `/reservas?bot_id=${encodeURIComponent(id)}&${new URLSearchParams(q)}`),
   // meta utilidades
   metaNumeros: () => request('GET', '/meta/numeros'),
   // usuarios — métodos extendidos
