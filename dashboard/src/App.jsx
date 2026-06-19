@@ -11,6 +11,7 @@ import { MisBots } from './pages/MisBots.jsx'
 import { MiConfiguracion } from './pages/MiConfiguracion.jsx'
 import { ClientesSistema } from './pages/ClientesSistema.jsx'
 import { SistemaBot } from './pages/SistemaBot.jsx'
+import { GestionNumeros } from './pages/GestionNumeros.jsx'
 
 // Protege rutas — redirige a login si no hay token
 function RequireAuth({ children }) {
@@ -52,6 +53,7 @@ export default function App() {
             <Route path="contactos" element={<RequireNivel minNivel={2}><Clientes /></RequireNivel>} />
             <Route path="clientes" element={<Navigate to="/admin/contactos" replace />} />
             <Route path="clientes-sistema" element={<RequireNivel minNivel={2}><ClientesSistema /></RequireNivel>} />
+            <Route path="numeros"          element={<RequireNivel minNivel={2}><GestionNumeros /></RequireNivel>} />
             <Route path="config" element={<Navigate to="/admin/mi-config" replace />} />
           </Route>
           <Route path="*" element={<Navigate to="/admin" replace />} />
