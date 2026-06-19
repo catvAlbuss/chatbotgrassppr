@@ -9,7 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { procesarMensaje, procesarImagen, procesarComandoAdmin, mostrarUbiCercanas } from './flujo.js';
-import { verificarConexionDB, query, queryOne } from './db.js';
+import { verificarConexionDB, asegurarEsquemaClientesSistema, query, queryOne } from './db.js';
 import { enviarTexto } from './whatsapp.js';
 import { getEstado, setEstado } from './storage.js';
 import apiRouter from './api.js';
@@ -32,7 +32,10 @@ async function resolverCtx(phoneNumberId) {
     if (!bot) return CTX_DEFAULT;
     return {
       botId:         bot.id,
-      config:        typeof bot.config === 'string' ? JSON.parse(bot.config) : (bot.config || {}),
+      config: {
+        ...(typeof bot.config === 'string' ? JSON.parse(bot.config) : (bot.config || {})),
+        admin_phone: bot.admin_phone || undefined,
+      },
       token:         bot.waba_token || null,
       phoneNumberId: bot.phone_number_id,
     };
@@ -50,7 +53,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json());
+// Los QR de pago se cargan como data URL y se convierten a archivo en la API.
+app.use(express.json({ limit: '3mb' }));
 
 // ─── DASHBOARD API ────────────────────────────────────────
 app.use('/api', apiRouter);
@@ -187,6 +191,16 @@ async function iniciar() {
     console.warn('⚠️  Iniciando SIN base de datos. Las reservas no se guardarán.');
     console.warn('   Revisa DB_HOST, DB_USER, DB_PASSWORD, DB_NAME en .env');
     // No salir — el bot sigue funcionando para no generar 503
+  }
+
+  // Evita arrancar una versión nueva contra un esquema antiguo.
+  if (dbOk) {
+    const schemaOk = await asegurarEsquemaClientesSistema();
+    if (!schemaOk) {
+      console.error('❌ Inicio cancelado: la base de datos requiere migración.');
+      process.exitCode = 1;
+      return;
+    }
   }
 
   // 2. Iniciar servidor HTTP

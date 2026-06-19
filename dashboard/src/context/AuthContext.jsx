@@ -60,8 +60,13 @@ export function AuthProvider({ children }) {
   const esAdminBot   = nivel >= 2   // administrador_bot+
   const esCliente    = nivel === 1  // solo cliente
 
+  // Plan del cliente (solo relevante cuando esCliente)
+  const plan         = user?.plan || null
+  const planExpira   = user?.plan_expira || null
+  const esDemo       = esCliente && plan === 'demo'
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, nivel, esRoot, esAdmin, esAdminBot, esCliente }}>
+    <AuthContext.Provider value={{ user, login, logout, nivel, esRoot, esAdmin, esAdminBot, esCliente, plan, planExpira, esDemo }}>
       {children}
     </AuthContext.Provider>
   )

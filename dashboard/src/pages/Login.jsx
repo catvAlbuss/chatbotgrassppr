@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bot, Eye, EyeOff, Loader2, Shield } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useAuth } from '../context/AuthContext.jsx'
+import swal from '../lib/swal.js'
 
 export function Login() {
   const [usuario, setUsuario]   = useState('')
@@ -13,6 +14,21 @@ export function Login() {
   const navigate = useNavigate()
   const { login } = useAuth()
 
+  useEffect(() => {
+    const msg = sessionStorage.getItem('gb_suspension_alert')
+    if (!msg) return
+    sessionStorage.removeItem('gb_suspension_alert')
+    swal.fire({
+      icon: 'warning',
+      title: 'Acceso suspendido',
+      html: `<p>${msg}</p><p style="margin-top:.5rem;font-size:.75rem;color:#6b7280">Contacta al administrador para restablecer tu acceso.</p>`,
+      timer: 10000,
+      timerProgressBar: true,
+      showConfirmButton: true,
+      confirmButtonText: 'Entendido',
+    })
+  }, [])
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
@@ -20,7 +36,36 @@ export function Login() {
     try {
       const data = await api.login(usuario, password)
       localStorage.setItem('gb_token', data.token)
-      login({ usuario: data.usuario, rol: data.rol, persona: data.persona || null })
+      login({
+        usuario: data.usuario, rol: data.rol, persona: data.persona || null,
+        cliente_sistema_id: data.cliente_sistema_id || null,
+        plan: data.plan || null,
+        plan_expira: data.plan_expira || null,
+      })
+
+      // Alerta de plan por vencer al iniciar sesión
+      if (data.plan_expira && data.plan !== 'lifetime') {
+        const hoy = new Date()
+        const expira = new Date(data.plan_expira + 'T12:00:00')
+        const dias = Math.ceil((expira - hoy) / (1000 * 60 * 60 * 24))
+        if (dias <= 7) {
+          const urgente = dias <= 2
+          await swal.fire({
+            icon: urgente ? 'error' : 'warning',
+            title: dias <= 0 ? '⛔ Plan vencido' : '⚠️ Plan por vencer',
+            html: `<p>Tu plan <strong>${data.plan}</strong> ${
+              dias <= 0 ? 'ha vencido'
+              : dias === 1 ? 'vence mañana'
+              : `vence en <strong>${dias} días</strong>`
+            }.</p><p style="margin-top:.5rem;font-size:.75rem;color:#6b7280">Contacta al administrador para renovar.</p>`,
+            timer: 9000,
+            timerProgressBar: true,
+            showConfirmButton: true,
+            confirmButtonText: 'Entendido',
+          })
+        }
+      }
+
       navigate('/admin')
     } catch (err) {
       setError(err.message)

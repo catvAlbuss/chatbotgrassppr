@@ -23,14 +23,17 @@ function RolBadge({ rol }) {
   )
 }
 
-function ModalCrear({ bots, onClose, onCreado }) {
+function ModalCrear({ bots, clientesSistema, onClose, onCreado }) {
   const { esRoot, nivel } = useAuth()
-  const [form, setForm]     = useState({ usuario: '', password: '', rol: 'cliente', dni: '', bot_ids: [] })
+  const [form, setForm]     = useState({ usuario: '', password: '', rol: 'cliente', dni: '', bot_ids: [], cliente_sistema_id: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState('')
 
   // Solo puede crear roles hasta su propio nivel
   const rolesDisponibles = ROLES_OPCIONES.filter(r => r.nivel < nivel || esRoot)
+  const botsDisponibles = form.cliente_sistema_id
+    ? bots.filter(bot => String(bot.cliente_sistema_id || '') === String(form.cliente_sistema_id))
+    : bots
 
   function toggleBot(id) {
     setForm(f => ({
@@ -84,6 +87,19 @@ function ModalCrear({ bots, onClose, onCreado }) {
               onChange={e => setForm(f => ({ ...f, dni: e.target.value.replace(/\D/g, '') }))} />
           </div>
 
+          {form.rol === 'cliente' && (
+            <div>
+              <label className="label">Cliente del sistema</label>
+              <select className="input" value={form.cliente_sistema_id}
+                onChange={e => setForm(f => ({ ...f, cliente_sistema_id: e.target.value, bot_ids: [] }))}>
+                <option value="">Sin entorno asignado</option>
+                {clientesSistema.map(cliente => (
+                  <option key={cliente.id} value={cliente.id}>{cliente.nombre_comercial || cliente.razon_social}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div>
             <label className="label">Rol</label>
             <div className="grid grid-cols-2 gap-2">
@@ -109,11 +125,11 @@ function ModalCrear({ bots, onClose, onCreado }) {
           </div>
 
           {/* Asignar bots — visible si el rol es cliente */}
-          {form.rol === 'cliente' && bots.length > 0 && (
+          {form.rol === 'cliente' && botsDisponibles.length > 0 && (
             <div>
               <label className="label">Asignar bots</label>
               <div className="space-y-1 max-h-36 overflow-y-auto">
-                {bots.map(b => (
+                {botsDisponibles.map(b => (
                   <label key={b.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-gray-800 hover:bg-gray-750 cursor-pointer">
                     <input type="checkbox" checked={form.bot_ids.includes(b.id)}
                       onChange={() => toggleBot(b.id)} className="accent-brand-500" />
@@ -149,14 +165,15 @@ export function Usuarios() {
   const { esAdmin, esRoot } = useAuth()
   const [usuarios, setUsuarios] = useState([])
   const [bots, setBots]         = useState([])
+  const [clientesSistema, setClientesSistema] = useState([])
   const [loading, setLoading]   = useState(true)
   const [buscar, setBuscar]     = useState('')
   const [modal, setModal]       = useState(false)
 
   function cargar() {
     setLoading(true)
-    Promise.all([api.usuarios(), api.bots()])
-      .then(([u, b]) => { setUsuarios(u); setBots(b) })
+    Promise.all([api.usuarios(), api.bots(), api.clientesSistema()])
+      .then(([u, b, c]) => { setUsuarios(u); setBots(b); setClientesSistema(c) })
       .catch(console.error)
       .finally(() => setLoading(false))
   }
@@ -232,6 +249,7 @@ export function Usuarios() {
                   <th className="px-5 py-3 font-medium">Usuario</th>
                   <th className="px-3 py-3 font-medium">Nombre</th>
                   <th className="px-3 py-3 font-medium">Rol</th>
+                  <th className="px-3 py-3 font-medium">Cliente del sistema</th>
                   <th className="px-3 py-3 font-medium">Bots</th>
                   <th className="px-3 py-3 font-medium">Estado</th>
                   <th className="px-3 py-3 font-medium">Último acceso</th>
@@ -250,6 +268,7 @@ export function Usuarios() {
                     <td className="px-3 py-3">
                       <RolBadge rol={u.rol} />
                     </td>
+                    <td className="px-3 py-3 text-xs text-gray-400">{u.cliente_sistema || '—'}</td>
                     <td className="px-3 py-3">
                       {u.bots?.length > 0 ? (
                         <span className="inline-flex items-center gap-1 text-xs text-brand-400">
@@ -282,6 +301,7 @@ export function Usuarios() {
       {modal && (
         <ModalCrear
           bots={bots}
+          clientesSistema={clientesSistema}
           onClose={() => setModal(false)}
           onCreado={cargar}
         />

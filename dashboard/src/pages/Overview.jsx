@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   CalendarCheck, DollarSign, Clock, Users, ArrowRight,
-  RefreshCw, TrendingUp, Bot, Boxes, Activity, Wifi
+  TrendingUp, Bot, Boxes, Activity, Wifi
 } from 'lucide-react'
 import { StatCard } from '../components/StatCard.jsx'
 import { Badge } from '../components/Badge.jsx'
@@ -44,37 +44,39 @@ export function Overview() {
   const [adminStats, setAdminStats] = useState(null)
   const [recientes, setRecientes] = useState([])
   const [loading, setLoading]     = useState(true)
-  const [ts, setTs]               = useState(Date.now())
 
   useEffect(() => {
-    setLoading(true)
-    const reqs = [api.stats(), api.reservas({ limit: 8 })]
-    if (esAdmin) reqs.push(api.statsAdmin())
-    Promise.all(reqs)
-      .then(([s, r, a]) => {
-        setStats(s)
-        setRecientes(r)
-        if (a) setAdminStats(a)
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [ts, esAdmin])
+    let activo = true
+    function cargar() {
+      setLoading(true)
+      const reqs = [api.stats(), api.reservas({ limit: 8 })]
+      if (esAdmin) reqs.push(api.statsAdmin())
+      Promise.all(reqs)
+        .then(([s, r, a]) => {
+          if (!activo) return
+          setStats(s)
+          setRecientes(r)
+          if (a) setAdminStats(a)
+        })
+        .catch(console.error)
+        .finally(() => { if (activo) setLoading(false) })
+    }
+    cargar()
+    const id = setInterval(cargar, 30_000)
+    return () => { activo = false; clearInterval(id) }
+  }, [esAdmin])
 
   const hoy = new Date().toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long' })
   const maxSemana = Math.max(...(stats?.semana?.map(d => Number(d.ingresos)) || [1]), 1)
 
   return (
-    <div className="space-y-6">
+    <div className="w-full space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-100">Resumen operativo</h1>
           <p className="text-gray-500 text-sm capitalize mt-0.5">{hoy}</p>
         </div>
-        <button onClick={() => setTs(Date.now())} className="btn-secondary flex items-center gap-2 text-sm">
-          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-          Actualizar
-        </button>
       </div>
 
       {/* KPIs del día */}

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Save, Loader2, CheckCircle, Settings, DollarSign, Clock, Phone, MessageSquare, AlertCircle } from 'lucide-react'
+import { Save, Loader2, CheckCircle, Settings, DollarSign, Clock, MessageSquare, AlertCircle, Upload, ImageIcon, Lock } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useAuth } from '../context/AuthContext.jsx'
+import { useSearchParams, Link } from 'react-router-dom'
 
 function Section({ icon: Icon, title, children }) {
   return (
@@ -25,8 +26,47 @@ function Field({ label, hint, children }) {
   )
 }
 
+function QrUpload({ label, value, pendingValue, onChange, onError }) {
+  function handleFile(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      onError('El QR debe ser PNG, JPG o WebP')
+      return
+    }
+    if (file.size > 750 * 1024) {
+      onError('La imagen QR no debe superar 750 KB')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => onChange(reader.result)
+    reader.onerror = () => onError('No se pudo leer la imagen')
+    reader.readAsDataURL(file)
+  }
+
+  const preview = pendingValue || value
+  return (
+    <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
+      <div className="flex items-center gap-4">
+        <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-700 bg-white">
+          {preview ? <img src={preview} alt={`QR ${label}`} className="h-full w-full object-contain p-1" /> : <ImageIcon size={28} className="text-gray-500" />}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-gray-200">QR {label}</p>
+          <p className="mb-3 mt-1 text-xs text-gray-500">PNG, JPG o WebP · máximo 750 KB</p>
+          <label className="btn-secondary inline-flex cursor-pointer items-center gap-2 text-sm">
+            <Upload size={14} /> {preview ? 'Reemplazar QR' : 'Subir QR'}
+            <input type="file" className="hidden" accept="image/png,image/jpeg,image/webp" onChange={handleFile} />
+          </label>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function MiConfiguracion() {
-  const { user } = useAuth()
+  const { user, esDemo } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [bots, setBots]     = useState([])
   const [botSel, setBotSel] = useState(null)
   const [config, setConfig] = useState(null)
@@ -41,7 +81,10 @@ export function MiConfiguracion() {
     api.bots()
       .then(data => {
         setBots(data)
-        if (data.length > 0) seleccionarBot(data[0])
+        if (data.length > 0) {
+          const requested = data.find(bot => bot.id === searchParams.get('bot'))
+          seleccionarBot(requested || data[0])
+        }
       })
       .catch(console.error)
       .finally(() => setLoading(false))
@@ -54,6 +97,7 @@ export function MiConfiguracion() {
     setConfig(bot.config ? (typeof bot.config === 'string' ? JSON.parse(bot.config) : { ...bot.config }) : {})
     setSaved(false)
     setError(null)
+    setSearchParams({ bot: bot.id }, { replace: true })
   }
 
   function setCfg(key, value) {
@@ -71,11 +115,12 @@ export function MiConfiguracion() {
     setSaving(true)
     setError(null)
     try {
-      await api.actualizarBot(botSel.id, {
+      const result = await api.actualizarBot(botSel.id, {
         nombre,
         admin_phone: adminPhone,
         config
       })
+      if (result.config) setConfig(result.config)
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (err) {
@@ -83,6 +128,32 @@ export function MiConfiguracion() {
     } finally {
       setSaving(false)
     }
+  }
+
+  // Clientes demo no pueden acceder a la configuración
+  if (esDemo) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center gap-5">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+          <Lock size={28} className="text-amber-400" />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold text-gray-100 mb-1">Configuración no disponible</h2>
+          <p className="text-gray-400 text-sm max-w-sm">
+            El <strong className="text-amber-400">plan Demo</strong> solo permite ver tu bot de prueba.<br />
+            Activa un plan para configurar mensajes, pagos, horarios y más.
+          </p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <Link to="/admin/planes" className="btn-primary inline-flex items-center gap-2 px-5">
+            Ver planes disponibles
+          </Link>
+          <Link to="/admin/mis-bots" className="btn-secondary inline-flex items-center gap-2 px-5">
+            Volver a Mis Bots
+          </Link>
+        </div>
+      </div>
+    )
   }
 
   if (loading) {
@@ -108,8 +179,8 @@ export function MiConfiguracion() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-100">Configuración de mi bot</h1>
-          <p className="text-gray-500 text-sm mt-0.5">Personaliza el nombre, pagos y horarios de tu asistente</p>
+          <h1 className="text-2xl font-bold text-gray-100">Configuración por bot</h1>
+          <p className="text-gray-500 text-sm mt-0.5">Cada bot conserva sus propios pagos, QR, horarios y mensajes</p>
         </div>
       </div>
 
@@ -145,7 +216,7 @@ export function MiConfiguracion() {
           </Section>
 
           <Section icon={DollarSign} title="Pagos">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Número Yape" hint="Solo los dígitos">
                 <input className="input" value={config?.pagos?.yape || ''} onChange={e => setCfgNested('pagos', 'yape', e.target.value)} placeholder="999 888 777" />
               </Field>
@@ -156,8 +227,14 @@ export function MiConfiguracion() {
             <Field label="Titular de la cuenta">
               <input className="input" value={config?.pagos?.titular || ''} onChange={e => setCfgNested('pagos', 'titular', e.target.value)} placeholder="Juan Pérez" />
             </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <QrUpload label="Yape" value={config?.pagos?.qr_yape} pendingValue={config?.pagos?.qr_yape_data}
+                onChange={data => setCfgNested('pagos', 'qr_yape_data', data)} onError={setError} />
+              <QrUpload label="Plin" value={config?.pagos?.qr_plin} pendingValue={config?.pagos?.qr_plin_data}
+                onChange={data => setCfgNested('pagos', 'qr_plin_data', data)} onError={setError} />
+            </div>
             {config?.precio_hora !== undefined && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid sm:grid-cols-2 gap-4">
                 <Field label="Precio por hora (S/.)">
                   <input className="input" type="number" min="1" value={config.precio_hora || 50} onChange={e => setCfg('precio_hora', Number(e.target.value))} />
                 </Field>
@@ -170,10 +247,15 @@ export function MiConfiguracion() {
                 </Field>
               </div>
             )}
+            <Field label="Tiempo límite para pagar" hint="Entre 5 y 60 minutos">
+              <input className="input sm:w-48" type="number" min="5" max="60"
+                value={config?.timeout_pago_minutos || 10}
+                onChange={e => setCfg('timeout_pago_minutos', Number(e.target.value))} />
+            </Field>
           </Section>
 
           <Section icon={Clock} title="Horarios de atención">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid sm:grid-cols-2 gap-4">
               <Field label="Apertura">
                 <input className="input" type="time" value={config?.horarios?.apertura || '07:00'} onChange={e => setCfgNested('horarios', 'apertura', e.target.value)} />
               </Field>
@@ -205,6 +287,12 @@ export function MiConfiguracion() {
                 placeholder="¡Tu reserva está confirmada! Te esperamos..."
               />
             </Field>
+            <Field label="Mensaje de pago rechazado">
+              <textarea className="input resize-none" rows={2}
+                value={config?.mensajes?.pago_rechazado || ''}
+                onChange={e => setCfgNested('mensajes', 'pago_rechazado', e.target.value)}
+                placeholder="No pudimos validar tu pago. Contáctanos para ayudarte..." />
+            </Field>
           </Section>
 
           {error && (
@@ -214,7 +302,7 @@ export function MiConfiguracion() {
             </div>
           )}
 
-          <div className="flex items-center justify-between pt-2">
+          <div className="flex flex-col gap-3 pt-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-xs text-gray-600">
               Bot: <span className="font-mono text-gray-500">{botSel.id}</span>
             </div>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Users, Search, RefreshCw } from 'lucide-react'
+import { Users, Search } from 'lucide-react'
 import { api } from '../lib/api.js'
 
 export function Clientes() {
@@ -8,10 +8,16 @@ export function Clientes() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.clientes()
-      .then(setClientes)
-      .catch(console.error)
-      .finally(() => setLoading(false))
+    function cargar() {
+      setLoading(true)
+      api.clientes()
+        .then(setClientes)
+        .catch(console.error)
+        .finally(() => setLoading(false))
+    }
+    cargar()
+    const id = setInterval(cargar, 30_000)
+    return () => clearInterval(id)
   }, [])
 
   const lista = clientes.filter(c =>
@@ -23,13 +29,9 @@ export function Clientes() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-100">Clientes</h1>
-          <p className="text-gray-500 text-sm mt-0.5">{clientes.length} clientes registrados</p>
+          <h1 className="text-2xl font-bold text-gray-100">Contactos del bot</h1>
+          <p className="text-gray-500 text-sm mt-0.5">{clientes.length} personas captadas por los bots</p>
         </div>
-        <button onClick={() => { setLoading(true); api.clientes().then(setClientes).finally(() => setLoading(false)) }}
-          className="btn-secondary flex items-center gap-2 text-sm">
-          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Actualizar
-        </button>
       </div>
 
       <div className="card">

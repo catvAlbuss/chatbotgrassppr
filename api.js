@@ -20,6 +20,7 @@ import { hashPassword, verifyPassword } from './auth.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
 const CONFIG_PATH = path.join(__dirname, 'botconfig.json');
+const QRS_PATH = path.join(__dirname, 'qrs');
 
 const JWT_SECRET = () => process.env.DASHBOARD_SECRET || 'gespro_asist_secret_2026';
 
@@ -30,14 +31,23 @@ const ROL_NIVEL = {
   admin: 4, operador: 2, consulta: 1  // legacy
 };
 
-function auth(req, res, next) {
+async function auth(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No autorizado' });
   try {
     req.user = jwt.verify(token, JWT_SECRET());
+    if (req.user.cliente_sistema_id && !req.user.legacy) {
+      const cs = await queryOne('SELECT estado FROM clientes_sistema WHERE id = ?', [req.user.cliente_sistema_id]);
+      if (cs?.estado === 'suspendido') {
+        return res.status(403).json({ error: 'Tu acceso ha sido suspendido. Contacta al administrador.' });
+      }
+    }
     next();
-  } catch {
-    res.status(401).json({ error: 'Token inválido o expirado' });
+  } catch (err) {
+    if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token inválido o expirado' });
+    }
+    next(err);
   }
 }
 
@@ -62,6 +72,50 @@ function esAdmin(rol)      { return (ROL_NIVEL[rol] || 0) >= 3; }
 function esAdminBot(rol)   { return (ROL_NIVEL[rol] || 0) >= 2; }
 function esCliente(rol)    { return rol === 'cliente' || rol === 'consulta'; }
 
+const PLAN_DIAS = { demo: 5, mensual: 30, anual: 365, lifetime: null };
+const PLAN_MAX_BOTS = { demo: 1, mensual: 1, anual: 2, lifetime: 999 };
+
+function normalizarPlan(plan) {
+  return plan === 'free' ? 'demo' : plan;
+}
+
+function fechasParaPlan(plan) {
+  const planNormalizado = normalizarPlan(plan);
+  if (!Object.hasOwn(PLAN_DIAS, planNormalizado)) throw new Error('Plan inválido');
+  const inicio = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(new Date());
+  const dias = PLAN_DIAS[planNormalizado];
+  if (dias === null) return { plan: planNormalizado, inicio, vencimiento: null };
+  const fecha = new Date(`${inicio}T12:00:00Z`);
+  fecha.setUTCDate(fecha.getUTCDate() + dias);
+  return { plan: planNormalizado, inicio, vencimiento: fecha.toISOString().slice(0, 10) };
+}
+
+function guardarQrPago(botId, metodo, dataUrl) {
+  if (!dataUrl) return null;
+  const match = String(dataUrl).match(/^data:image\/(png|jpeg|jpg|webp);base64,([A-Za-z0-9+/=]+)$/);
+  if (!match) throw new Error(`QR de ${metodo} inválido`);
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length > 750 * 1024) throw new Error(`El QR de ${metodo} supera 750 KB`);
+  const extension = match[1] === 'jpeg' ? 'jpg' : match[1];
+  const safeBotId = String(botId).replace(/[^a-zA-Z0-9_-]/g, '');
+  fs.mkdirSync(QRS_PATH, { recursive: true });
+  const filename = `${safeBotId}-${metodo}.${extension}`;
+  fs.writeFileSync(path.join(QRS_PATH, filename), buffer);
+  return `/qrs/${filename}`;
+}
+
+function persistirQrPagos(botId, config) {
+  if (!config?.pagos) return config;
+  const pagos = { ...config.pagos };
+  if (pagos.qr_yape_data) pagos.qr_yape = guardarQrPago(botId, 'yape', pagos.qr_yape_data);
+  if (pagos.qr_plin_data) pagos.qr_plin = guardarQrPago(botId, 'plin', pagos.qr_plin_data);
+  delete pagos.qr_yape_data;
+  delete pagos.qr_plin_data;
+  return { ...config, pagos };
+}
+
 // ─── AUTENTICACIÓN ───────────────────────────────────────────
 router.post('/auth/login', async (req, res) => {
   const { usuario, password } = req.body || {};
@@ -71,7 +125,8 @@ router.post('/auth/login', async (req, res) => {
 
   try {
     const user = await queryOne(
-      `SELECT u.id, u.usuario, u.password_hash, u.rol, p.dni, p.nombres, p.apellidos
+      `SELECT u.id, u.usuario, u.password_hash, u.rol, u.cliente_sistema_id,
+              p.dni, p.nombres, p.apellidos
        FROM usuarios u
        LEFT JOIN personas p ON p.id = u.persona_id
        WHERE u.usuario = ? AND u.activo = 1`,
@@ -79,18 +134,33 @@ router.post('/auth/login', async (req, res) => {
     );
 
     if (user && verifyPassword(password, user.password_hash)) {
+      let clientePlan = null;
+      if (user.cliente_sistema_id) {
+        const cs = await queryOne(
+          'SELECT estado, plan, plan_expira FROM clientes_sistema WHERE id = ?',
+          [user.cliente_sistema_id]
+        );
+        if (cs?.estado === 'suspendido') {
+          return res.status(403).json({ error: 'Tu acceso ha sido suspendido. Contacta al administrador.' });
+        }
+        clientePlan = cs ? { plan: cs.plan || 'demo', plan_expira: cs.plan_expira || null } : null;
+      }
       await query('UPDATE usuarios SET ultimo_login = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
-      const claims = { id: user.id, usuario: user.usuario, rol: user.rol };
+      const claims = {
+        id: user.id, usuario: user.usuario, rol: user.rol,
+        cliente_sistema_id: user.cliente_sistema_id || null,
+        plan: clientePlan?.plan || null,
+        plan_expira: clientePlan?.plan_expira || null,
+      };
       const token = jwt.sign(claims, JWT_SECRET(), { expiresIn: '24h' });
       return res.json({
         token,
         usuario: user.usuario,
         rol: user.rol,
-        persona: user.dni ? {
-          dni: user.dni,
-          nombres: user.nombres,
-          apellidos: user.apellidos
-        } : null
+        cliente_sistema_id: user.cliente_sistema_id || null,
+        plan: clientePlan?.plan || null,
+        plan_expira: clientePlan?.plan_expira || null,
+        persona: user.dni ? { dni: user.dni, nombres: user.nombres, apellidos: user.apellidos } : null
       });
     }
   } catch (err) {
@@ -108,7 +178,11 @@ router.post('/auth/login', async (req, res) => {
 
 router.post('/auth/refresh', auth, (req, res) => {
   const token = jwt.sign(
-    { id: req.user.id, usuario: req.user.usuario, rol: req.user.rol, legacy: req.user.legacy },
+    {
+      id: req.user.id, usuario: req.user.usuario, rol: req.user.rol,
+      cliente_sistema_id: req.user.cliente_sistema_id || null,
+      legacy: req.user.legacy
+    },
     JWT_SECRET(),
     { expiresIn: '24h' }
   );
@@ -120,13 +194,15 @@ router.get('/usuarios', auth, adminBotOnly, async (_req, res) => {
   try {
     const usuarios = await query(
       `SELECT u.id, u.usuario, u.rol, u.activo, u.ultimo_login, u.creado_en,
-              p.dni, p.nombres, p.apellidos,
+               u.cliente_sistema_id, cs.razon_social AS cliente_sistema,
+               p.dni, p.nombres, p.apellidos,
               GROUP_CONCAT(ub.bot_id ORDER BY ub.bot_id) AS bots
        FROM usuarios u
        LEFT JOIN personas p ON p.id = u.persona_id
+       LEFT JOIN clientes_sistema cs ON cs.id = u.cliente_sistema_id
        LEFT JOIN usuario_bots ub ON ub.usuario_id = u.id
        GROUP BY u.id, u.usuario, u.rol, u.activo, u.ultimo_login, u.creado_en,
-                p.dni, p.nombres, p.apellidos
+                 u.cliente_sistema_id, cs.razon_social, p.dni, p.nombres, p.apellidos
        ORDER BY u.creado_en DESC`
     );
     res.json(usuarios.map(u => ({ ...u, bots: u.bots ? u.bots.split(',') : [] })));
@@ -137,7 +213,7 @@ router.get('/usuarios', auth, adminBotOnly, async (_req, res) => {
 
 router.post('/usuarios', auth, adminBotOnly, async (req, res) => {
   try {
-    const { usuario, password, rol = 'cliente', dni, bot_ids = [] } = req.body || {};
+    const { usuario, password, rol = 'cliente', dni, bot_ids = [], cliente_sistema_id = null } = req.body || {};
     if (!usuario || !password) {
       return res.status(400).json({ error: 'usuario y password son requeridos' });
     }
@@ -163,9 +239,9 @@ router.post('/usuarios', auth, adminBotOnly, async (req, res) => {
     }
 
     const result = await query(
-      `INSERT INTO usuarios (persona_id, usuario, password_hash, rol)
-       VALUES (?, ?, ?, ?)`,
-      [personaId, usuario.trim(), hashPassword(password), rol]
+      `INSERT INTO usuarios (persona_id, cliente_sistema_id, usuario, password_hash, rol)
+       VALUES (?, ?, ?, ?, ?)`,
+      [personaId, cliente_sistema_id || null, usuario.trim(), hashPassword(password), rol]
     );
     const userId = result.insertId;
 
@@ -184,7 +260,7 @@ router.post('/usuarios', auth, adminBotOnly, async (req, res) => {
 
 router.put('/usuarios/:id', auth, adminBotOnly, async (req, res) => {
   try {
-    const { activo, rol, bot_ids } = req.body || {}
+    const { activo, rol, bot_ids, cliente_sistema_id } = req.body || {}
     // No permite escalar a root salvo que sea root
     if (rol === 'root' && !esAdmin(req.user?.rol)) {
       return res.status(403).json({ error: 'Solo root puede asignar ese rol' })
@@ -194,6 +270,9 @@ router.put('/usuarios/:id', auth, adminBotOnly, async (req, res) => {
     }
     if (rol) {
       await query('UPDATE usuarios SET rol = ? WHERE id = ?', [rol, req.params.id])
+    }
+    if (cliente_sistema_id !== undefined) {
+      await query('UPDATE usuarios SET cliente_sistema_id = ? WHERE id = ?', [cliente_sistema_id || null, req.params.id])
     }
     if (Array.isArray(bot_ids)) {
       await query('DELETE FROM usuario_bots WHERE usuario_id = ?', [req.params.id])
@@ -262,15 +341,70 @@ router.get('/stats', auth, async (req, res) => {
   }
 });
 
+// ─── STATS POR BOT ───────────────────────────────────────────
+router.get('/bots/:id/stats', auth, async (req, res) => {
+  try {
+    const botId = req.params.id;
+    // Verificar acceso: cliente solo puede ver su propio bot
+    const bot = await queryOne('SELECT cliente_sistema_id FROM bots WHERE id = ?', [botId]);
+    if (!bot) return res.status(404).json({ error: 'Bot no encontrado' });
+    if (esCliente(req.user?.rol) && bot.cliente_sistema_id !== req.user.cliente_sistema_id) {
+      return res.status(403).json({ error: 'Sin acceso a este bot' });
+    }
+
+    const hoy = new Date().toISOString().split('T')[0];
+    const [resumenHoy, ingresosHoy, pendientes, semana, ultimas] = await Promise.all([
+      queryOne(
+        `SELECT COUNT(*) AS total, COUNT(DISTINCT phone) AS clientes
+         FROM reservas WHERE fecha = ? AND bot_id = ?`, [hoy, botId]
+      ),
+      queryOne(
+        `SELECT COALESCE(SUM(monto_reserva), 0) AS total
+         FROM reservas WHERE estado = 'CONFIRMADA' AND DATE(creado_en) = ? AND bot_id = ?`, [hoy, botId]
+      ),
+      queryOne(
+        `SELECT COUNT(*) AS total FROM reservas
+         WHERE estado IN ('EN_REVISION','COMPROBANTE_ENVIADO') AND bot_id = ?`, [botId]
+      ),
+      query(
+        `SELECT DATE(creado_en) AS dia, COUNT(*) AS reservas,
+                COALESCE(SUM(monto_reserva),0) AS ingresos
+         FROM reservas
+         WHERE creado_en >= DATE_SUB(NOW(), INTERVAL 7 DAY) AND bot_id = ?
+         GROUP BY dia ORDER BY dia`, [botId]
+      ),
+      query(
+        `SELECT id, nombres, apellidos, tipo_cancha, fecha, horas, monto_reserva, estado, creado_en
+         FROM reservas WHERE bot_id = ? ORDER BY creado_en DESC LIMIT 10`, [botId]
+      ),
+    ]);
+
+    res.json({
+      reservas_hoy:    resumenHoy?.total   || 0,
+      clientes_hoy:    resumenHoy?.clientes || 0,
+      ingresos_hoy:    Number(ingresosHoy?.total || 0).toFixed(2),
+      pagos_pendientes: pendientes?.total   || 0,
+      semana,
+      ultimas_reservas: ultimas.map(r => ({
+        ...r,
+        horas: typeof r.horas === 'string' ? JSON.parse(r.horas) : r.horas,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── RESERVAS ────────────────────────────────────────────────
 router.get('/reservas', auth, async (req, res) => {
   try {
-    const { estado, fecha, buscar, limit = 50, offset = 0 } = req.query;
+    const { estado, fecha, buscar, bot_id, limit = 50, offset = 0 } = req.query;
     const pageLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 50, 1), 200);
     const pageOffset = Math.max(Number.parseInt(offset, 10) || 0, 0);
     let sql = `SELECT * FROM reservas WHERE 1=1`;
     const params = [];
 
+    if (bot_id) { sql += ` AND bot_id = ?`; params.push(bot_id); }
     if (estado) { sql += ` AND estado = ?`; params.push(estado); }
     if (fecha)  { sql += ` AND fecha = ?`; params.push(fecha); }
     if (buscar) {
@@ -381,6 +515,103 @@ router.put('/config', auth, (req, res) => {
 });
 
 // ─── CLIENTES ────────────────────────────────────────────────
+// Clientes que contratan la plataforma. Solo los gestiona el equipo interno.
+router.get('/clientes-sistema', auth, adminBotOnly, async (_req, res) => {
+  try {
+    const clientes = await query(`
+      SELECT cs.*, COUNT(DISTINCT b.id) AS total_bots,
+             COUNT(DISTINCT u.id) AS total_usuarios
+      FROM clientes_sistema cs
+      LEFT JOIN bots b ON b.cliente_sistema_id = cs.id
+      LEFT JOIN usuarios u ON u.cliente_sistema_id = cs.id
+      GROUP BY cs.id
+      ORDER BY cs.creado_en DESC
+    `);
+    res.json(clientes);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/clientes-sistema', auth, adminBotOnly, async (req, res) => {
+  try {
+    const {
+      razon_social, nombre_comercial, tipo_documento = 'RUC', numero_documento,
+      contacto_nombre, contacto_email, contacto_telefono, estado = 'activo', notas,
+      plan = 'demo'
+    } = req.body || {};
+    if (!razon_social?.trim() || !numero_documento?.trim()) {
+      return res.status(400).json({ error: 'razon_social y numero_documento son requeridos' });
+    }
+    if (!['RUC', 'DNI', 'CE', 'OTRO'].includes(tipo_documento)) {
+      return res.status(400).json({ error: 'tipo_documento inválido' });
+    }
+    const planNorm = normalizarPlan(plan);
+    if (!Object.hasOwn(PLAN_DIAS, planNorm)) {
+      return res.status(400).json({ error: 'Plan inválido' });
+    }
+    const vigencia = fechasParaPlan(planNorm);
+    const result = await query(
+      `INSERT INTO clientes_sistema
+       (razon_social, nombre_comercial, tipo_documento, numero_documento,
+        contacto_nombre, contacto_email, contacto_telefono, estado, notas,
+        plan, plan_inicio, plan_expira)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [razon_social.trim(), nombre_comercial?.trim() || null, tipo_documento,
+       numero_documento.trim(), contacto_nombre?.trim() || null,
+       contacto_email?.trim() || null, contacto_telefono?.trim() || null,
+       estado === 'suspendido' ? 'suspendido' : 'activo', notas?.trim() || null,
+       vigencia.plan, vigencia.inicio, vigencia.vencimiento]
+    );
+    res.status(201).json({ ok: true, id: result.insertId });
+  } catch (err) {
+    const duplicado = err.code === 'ER_DUP_ENTRY';
+    res.status(duplicado ? 409 : 500).json({
+      error: duplicado ? 'Ya existe un cliente con ese documento' : err.message
+    });
+  }
+});
+
+router.put('/clientes-sistema/:id', auth, adminBotOnly, async (req, res) => {
+  try {
+    const camposBase = ['razon_social', 'nombre_comercial', 'tipo_documento', 'numero_documento',
+      'contacto_nombre', 'contacto_email', 'contacto_telefono', 'estado', 'notas'];
+    const sets = [];
+    const vals = [];
+
+    // Campos normales
+    for (const campo of camposBase) {
+      if (req.body?.[campo] !== undefined) {
+        sets.push(`\`${campo}\` = ?`);
+        vals.push(req.body[campo] === '' ? null : req.body[campo]);
+      }
+    }
+
+    // Cambio de plan (recalcula fechas)
+    if (req.body?.plan !== undefined) {
+      const planNorm = normalizarPlan(req.body.plan);
+      if (!Object.hasOwn(PLAN_DIAS, planNorm)) {
+        return res.status(400).json({ error: 'Plan inválido' });
+      }
+      const v = fechasParaPlan(planNorm);
+      sets.push('`plan` = ?', '`plan_inicio` = ?', '`plan_expira` = ?');
+      vals.push(v.plan, v.inicio, v.vencimiento);
+    }
+
+    if (!sets.length) return res.status(400).json({ error: 'No hay cambios para guardar' });
+    const result = await query(
+      `UPDATE clientes_sistema SET ${sets.join(', ')} WHERE id = ?`,
+      [...vals, req.params.id]
+    );
+    if (!result.affectedRows) return res.status(404).json({ error: 'Cliente del sistema no encontrado' });
+    res.json({ ok: true });
+  } catch (err) {
+    const duplicado = err.code === 'ER_DUP_ENTRY';
+    res.status(duplicado ? 409 : 500).json({ error: duplicado ? 'El documento ya está registrado' : err.message });
+  }
+});
+
+// Contactos captados por los bots. Se conserva /clientes por compatibilidad.
 router.get('/clientes', auth, async (req, res) => {
   try {
     const clientes = await query(
@@ -447,15 +678,36 @@ const BOT_TEMPLATES = {
 
 router.get('/bots', auth, async (req, res) => {
   try {
-    const bots = esAdminBot(req.user?.rol) || req.user.legacy
-      ? await query('SELECT * FROM bots ORDER BY creado_en DESC')
-      : await query(
-          `SELECT b.*
-           FROM bots b
-           INNER JOIN usuario_bots ub ON ub.bot_id = b.id AND ub.usuario_id = ?
-           ORDER BY b.creado_en DESC`,
-          [req.user.id]
-        );
+    let bots;
+    if (esAdminBot(req.user?.rol) || req.user.legacy) {
+      bots = await query(`SELECT b.*, cs.razon_social AS cliente_sistema,
+                                 cs.nombre_comercial AS cliente_nombre_comercial
+                          FROM bots b
+                          LEFT JOIN clientes_sistema cs ON cs.id = b.cliente_sistema_id
+                          ORDER BY b.creado_en DESC`);
+    } else if (req.user.cliente_sistema_id) {
+      // Cliente: ve todos los bots asignados a su empresa
+      bots = await query(
+        `SELECT b.*, cs.razon_social AS cliente_sistema,
+                cs.nombre_comercial AS cliente_nombre_comercial
+         FROM bots b
+         LEFT JOIN clientes_sistema cs ON cs.id = b.cliente_sistema_id
+         WHERE b.cliente_sistema_id = ?
+         ORDER BY b.creado_en DESC`,
+        [req.user.cliente_sistema_id]
+      );
+    } else {
+      // Fallback: usuario sin cliente_sistema_id (usuario_bots legacy)
+      bots = await query(
+        `SELECT b.*, cs.razon_social AS cliente_sistema,
+                cs.nombre_comercial AS cliente_nombre_comercial
+         FROM bots b
+         INNER JOIN usuario_bots ub ON ub.bot_id = b.id AND ub.usuario_id = ?
+         LEFT JOIN clientes_sistema cs ON cs.id = b.cliente_sistema_id
+         ORDER BY b.creado_en DESC`,
+        [req.user.id]
+      );
+    }
     bots.forEach(b => {
       if (typeof b.config === 'string') b.config = JSON.parse(b.config);
     });
@@ -467,16 +719,19 @@ router.get('/bots', auth, async (req, res) => {
 
 router.post('/bots', auth, adminBotOnly, async (req, res) => {
   try {
-    const { nombre, tipo, phone_number_id, admin_phone, plan } = req.body;
+    const { nombre, tipo, phone_number_id, admin_phone, plan, cliente_sistema_id } = req.body;
     if (!nombre || !tipo) return res.status(400).json({ error: 'nombre y tipo son requeridos' });
 
     const id = `BOT-${Date.now()}`;
     const config = BOT_TEMPLATES[tipo] || BOT_TEMPLATES.grass;
+    const vigencia = fechasParaPlan(plan || 'demo');
 
     await query(
-      `INSERT INTO bots (id, nombre, tipo, phone_number_id, admin_phone, config, plan)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, nombre, tipo, phone_number_id || null, admin_phone || null, JSON.stringify(config), plan || 'demo']
+      `INSERT INTO bots (id, cliente_sistema_id, nombre, tipo, phone_number_id, admin_phone,
+                         config, plan, plan_inicio, plan_expira)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, cliente_sistema_id || null, nombre, tipo, phone_number_id || null,
+       admin_phone || null, JSON.stringify(config), vigencia.plan, vigencia.inicio, vigencia.vencimiento]
     );
     if (req.user.id) {
       await query(
@@ -492,7 +747,12 @@ router.post('/bots', auth, adminBotOnly, async (req, res) => {
 
 router.get('/bots/:id', auth, async (req, res) => {
   try {
-    const bot = await queryOne('SELECT * FROM bots WHERE id = ?', [req.params.id]);
+    const bot = await queryOne(
+      `SELECT b.*, cs.razon_social AS cliente_sistema,
+              cs.nombre_comercial AS cliente_nombre_comercial
+       FROM bots b LEFT JOIN clientes_sistema cs ON cs.id = b.cliente_sistema_id
+       WHERE b.id = ?`, [req.params.id]
+    );
     if (!bot) return res.status(404).json({ error: 'Bot no encontrado' });
     if (typeof bot.config === 'string') bot.config = JSON.parse(bot.config);
     res.json(bot);
@@ -504,6 +764,22 @@ router.get('/bots/:id', auth, async (req, res) => {
 router.put('/bots/:id', auth, async (req, res) => {
   try {
     const body = { ...req.body };
+    const botActual = await queryOne('SELECT id, plan, cliente_sistema_id FROM bots WHERE id = ?', [req.params.id]);
+    if (!botActual) return res.status(404).json({ error: 'Bot no encontrado' });
+
+    // Clientes con plan demo: no pueden editar la configuración del bot
+    if (esCliente(req.user?.rol) && botActual.cliente_sistema_id) {
+      const cs = await queryOne('SELECT plan FROM clientes_sistema WHERE id = ?', [botActual.cliente_sistema_id]);
+      if (cs?.plan === 'demo') {
+        return res.status(403).json({ error: 'El plan Demo no permite editar la configuración del bot.' });
+      }
+    }
+    if ((body.plan !== undefined || body.renovar_plan === true) && !esAdminBot(req.user?.rol)) {
+      return res.status(403).json({ error: 'Solo administradores pueden cambiar o renovar planes' });
+    }
+    // Las fechas siempre se calculan en el servidor.
+    delete body.plan_inicio;
+    delete body.plan_expira;
 
     // Clientes: solo pueden editar sus propios bots y campos permitidos
     if (esCliente(req.user?.rol)) {
@@ -516,10 +792,36 @@ router.put('/bots/:id', auth, async (req, res) => {
       }
       // Campos que el cliente NO puede modificar
       delete body.plan; delete body.plan_inicio; delete body.plan_expira;
+      delete body.renovar_plan;
       delete body.activo; delete body.phone_number_id; delete body.tipo;
     }
 
-    const { nombre, phone_number_id, admin_phone, config, plan, plan_inicio, plan_expira, activo } = body;
+    const { nombre, phone_number_id, admin_phone, activo,
+      cliente_sistema_id } = body;
+
+    // Validar límite de bots del cliente al reasignar
+    if (esAdminBot(req.user?.rol) && cliente_sistema_id != null && cliente_sistema_id !== botActual.cliente_sistema_id) {
+      const cs = await queryOne('SELECT plan FROM clientes_sistema WHERE id = ?', [cliente_sistema_id]);
+      if (cs) {
+        const maxBots = PLAN_MAX_BOTS[cs.plan] ?? 1;
+        const [{ total }] = await query(
+          'SELECT COUNT(*) AS total FROM bots WHERE cliente_sistema_id = ?', [cliente_sistema_id]
+        );
+        if (total >= maxBots) {
+          return res.status(409).json({
+            error: `El plan ${cs.plan} solo permite ${maxBots} bot${maxBots > 1 ? 's' : ''}. Este cliente ya alcanzó su límite.`
+          });
+        }
+      }
+    }
+
+    const plan = body.plan ? normalizarPlan(body.plan) : null;
+    if (plan && !Object.hasOwn(PLAN_DIAS, plan)) {
+      return res.status(400).json({ error: 'Plan inválido' });
+    }
+    const cambiarVigencia = Boolean(plan && (plan !== botActual.plan || body.renovar_plan === true));
+    const vigencia = cambiarVigencia ? fechasParaPlan(plan) : null;
+    const config = body.config ? persistirQrPagos(req.params.id, body.config) : null;
     await query(
       `UPDATE bots SET
         nombre          = COALESCE(?, nombre),
@@ -527,19 +829,25 @@ router.put('/bots/:id', auth, async (req, res) => {
         admin_phone     = COALESCE(?, admin_phone),
         config          = COALESCE(?, config),
         plan            = COALESCE(?, plan),
-        plan_inicio     = COALESCE(?, plan_inicio),
-        plan_expira     = COALESCE(?, plan_expira),
+        plan_inicio     = CASE WHEN ? = 1 THEN ? ELSE plan_inicio END,
+        plan_expira     = CASE WHEN ? = 1 THEN ? ELSE plan_expira END,
         activo          = COALESCE(?, activo)
+        ${esAdminBot(req.user?.rol) && cliente_sistema_id !== undefined ? ', cliente_sistema_id = ?' : ''}
        WHERE id = ?`,
       [
         nombre || null, phone_number_id || null, admin_phone || null,
         config ? JSON.stringify(config) : null,
-        plan || null, plan_inicio || null, plan_expira || null,
+        plan || null,
+        cambiarVigencia ? 1 : 0, vigencia?.inicio || null,
+        cambiarVigencia ? 1 : 0, vigencia?.vencimiento || null,
         activo !== undefined ? activo : null,
+        ...(esAdminBot(req.user?.rol) && cliente_sistema_id !== undefined ? [cliente_sistema_id || null] : []),
         req.params.id
       ]
     );
-    res.json({ ok: true });
+    res.json({ ok: true, ...(config ? { config } : {}), ...(vigencia ? {
+      plan: vigencia.plan, plan_inicio: vigencia.inicio, plan_expira: vigencia.vencimiento
+    } : {}) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -796,6 +1104,10 @@ router.post('/bots/:id/asignar-cliente', auth, adminBotOnly, async (req, res) =>
        ON DUPLICATE KEY UPDATE puede_editar = VALUES(puede_editar), puede_ver_stats = VALUES(puede_ver_stats)`,
       [usuario_id, req.params.id, puede_editar ? 1 : 0, puede_ver_stats ? 1 : 0]
     );
+    const usuario = await queryOne('SELECT cliente_sistema_id FROM usuarios WHERE id = ?', [usuario_id]);
+    if (usuario?.cliente_sistema_id) {
+      await query('UPDATE bots SET cliente_sistema_id = ? WHERE id = ?', [usuario.cliente_sistema_id, req.params.id]);
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -807,7 +1119,7 @@ router.get('/stats/admin', auth, adminOnly, async (_req, res) => {
   try {
     const [botsActivos, clientesTotal, ingresosUltimos30, distribucion] = await Promise.all([
       queryOne('SELECT COUNT(*) AS total FROM bots WHERE activo = 1'),
-      queryOne('SELECT COUNT(*) AS total FROM usuarios WHERE rol = "cliente" AND activo = 1'),
+      queryOne('SELECT COUNT(*) AS total FROM clientes_sistema WHERE estado = "activo"'),
       queryOne(`
         SELECT COALESCE(SUM(monto_reserva), 0) AS total
         FROM reservas

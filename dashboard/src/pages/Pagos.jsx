@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle, XCircle, RefreshCw, Loader2, AlertCircle } from 'lucide-react'
+import { CheckCircle, XCircle, Loader2, AlertCircle } from 'lucide-react'
 import { Badge } from '../components/Badge.jsx'
 import { api } from '../lib/api.js'
 
@@ -12,7 +12,6 @@ export function Pagos() {
     setLoading(true)
     api.reservas({ estado: 'EN_REVISION', limit: 50 })
       .then(r => {
-        // También incluir COMPROBANTE_ENVIADO
         return api.reservas({ estado: 'COMPROBANTE_ENVIADO', limit: 50 }).then(r2 => {
           const map = new Map()
           ;[...r, ...r2].forEach(x => map.set(x.id, x))
@@ -23,7 +22,11 @@ export function Pagos() {
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { cargar() }, [])
+  useEffect(() => {
+    cargar()
+    const id = setInterval(cargar, 20_000)
+    return () => clearInterval(id)
+  }, [])
 
   async function accion(id, tipo) {
     setAcciones(a => ({ ...a, [id]: tipo }))
@@ -47,9 +50,6 @@ export function Pagos() {
           <h1 className="text-2xl font-bold text-gray-100">Pagos Pendientes</h1>
           <p className="text-gray-500 text-sm mt-0.5">Aprobar o rechazar comprobantes</p>
         </div>
-        <button onClick={cargar} className="btn-secondary flex items-center gap-2 text-sm">
-          <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Actualizar
-        </button>
       </div>
 
       {loading ? (

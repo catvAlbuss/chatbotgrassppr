@@ -1,64 +1,60 @@
 // ============================================================
-// qr.js - Generador de QR para pagos
+// qr.js - QR e instrucciones de pago
 // ============================================================
 import QRCode from 'qrcode';
-import { writeFileSync, mkdirSync } from 'fs';
+import { mkdirSync } from 'fs';
 import path from 'path';
 
-// Crear carpeta para QRs si no existe
 mkdirSync('./qrs', { recursive: true });
 
-/**
- * Genera un QR dinámico para una reserva específica y lo guarda en ./qrs/
- */
 export async function generarQRPago(reservaId, monto, nombreCliente) {
   const info = [
-    `GRASS SINTÉTICO`,
+    'GRASS SINTÉTICO',
     `Reserva: ${reservaId}`,
     `Cliente: ${nombreCliente}`,
     `Monto: S/. ${monto}`,
     `Yape/Plin: ${process.env.PAYMENT_YAPE}`,
     `Titular: ${process.env.PAYMENT_ACCOUNT}`
   ].join('\n');
-
   const filePath = path.resolve(`./qrs/${reservaId}.png`);
-
   await QRCode.toFile(filePath, info, {
-    color: { dark: '#1a5c2a', light: '#ffffff' },
-    width: 300,
-    margin: 2
+    color: { dark: '#1a5c2a', light: '#ffffff' }, width: 300, margin: 2
   });
-
   return filePath;
 }
 
-/**
- * Retorna la URL pública del QR de Yape (imagen fija).
- * La imagen debe estar en ./qrs/qrcodeyapera.png
- * Configura QR_PUBLIC_URL en tu .env con la URL de tu servidor.
- */
-export function getUrlQRYape() {
+function urlPublica(pathOrUrl) {
+  if (!pathOrUrl) return null;
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
   if (!process.env.QR_PUBLIC_URL) return null;
-  return `${process.env.QR_PUBLIC_URL}/qrs/qrcodeyapera.png`;
+  return `${process.env.QR_PUBLIC_URL.replace(/\/$/, '')}/${String(pathOrUrl).replace(/^\//, '')}`;
 }
 
-/**
- * Retorna el texto formateado con instrucciones de pago.
- */
-export function getMensajePago(reservaId, monto, nombreCliente) {
+export function getUrlQRYape(config = {}) {
+  return urlPublica(config?.pagos?.qr_yape || '/qrs/qrcodeyapera.png');
+}
+
+export function getUrlQRPlin(config = {}) {
+  return urlPublica(config?.pagos?.qr_plin);
+}
+
+export function getMensajePago(reservaId, monto, nombreCliente, config = {}) {
+  const pagos = config?.pagos || {};
+  const numeros = [pagos.yape, pagos.plin].filter(Boolean).join(' / ') || process.env.PAYMENT_YAPE;
+  const titular = pagos.titular || process.env.PAYMENT_ACCOUNT;
+  const timeout = config?.timeout_pago_minutos || 10;
   return `💳 *INSTRUCCIONES DE PAGO*\n\n` +
     `📋 Reserva: *${reservaId}*\n` +
     `👤 A nombre de: ${nombreCliente}\n` +
     `💰 *Monto a pagar: S/. ${monto}*\n\n` +
     `─────────────────\n` +
     `📱 *YAPE / PLIN*\n` +
-    `Número: *${process.env.PAYMENT_YAPE}*\n` +
-    `Titular: *${process.env.PAYMENT_ACCOUNT}*\n` +
+    `Número: *${numeros || 'Por confirmar'}*\n` +
+    `Titular: *${titular || 'Por confirmar'}*\n` +
     `─────────────────\n\n` +
-    `⚠️ En el concepto/descripción escribe:\n` +
-    `*${reservaId}*\n\n` +
-    `⏰ Tienes *10 minutos* para:\n` +
+    `⚠️ En el concepto/descripción escribe:\n*${reservaId}*\n\n` +
+    `⏰ Tienes *${timeout} minutos* para:\n` +
     `1️⃣ Enviarnos el *número de operación*\n` +
     `2️⃣ Una *captura del comprobante*\n\n` +
-    `_Si no enviás en 10 min, la reserva se cancelará automáticamente._`;
+    `_Si no envías a tiempo, la reserva se cancelará automáticamente._`;
 }
