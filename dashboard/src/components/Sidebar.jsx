@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, CalendarCheck, Clock, Users, CreditCard, LogOut, Bot,
   ChevronRight, Boxes, Building2, Shield, BadgeCheck, Headphones,
-  SlidersHorizontal, PanelLeftClose, PanelLeftOpen, X
+  SlidersHorizontal, PanelLeftClose, PanelLeftOpen, X, Phone
 } from 'lucide-react'
 import { useAuth, ROL_LABELS } from '../context/AuthContext.jsx'
 
@@ -15,8 +15,9 @@ const NAV_SECTIONS = [
   ]},
   { label: 'Administración', items: [
     { to: '/admin/clientes-sistema', icon: Building2, label: 'Clientes y Accesos', minNivel: 2 },
-    { to: '/admin/bots', icon: Boxes, label: 'Bots', minNivel: 1 },
-    { to: '/admin/planes', icon: CreditCard, label: 'Planes', minNivel: 1 },
+    { to: '/admin/bots',    icon: Boxes,    label: 'Bots',               minNivel: 1 },
+    { to: '/admin/numeros', icon: Phone,    label: 'Números WhatsApp',   minNivel: 2 },
+    { to: '/admin/planes',  icon: CreditCard, label: 'Planes',           minNivel: 1 },
   ]}
 ]
 

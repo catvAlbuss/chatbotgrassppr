@@ -681,7 +681,8 @@ router.get('/bots', auth, async (req, res) => {
     let bots;
     if (esAdminBot(req.user?.rol) || req.user.legacy) {
       bots = await query(`SELECT b.*, cs.razon_social AS cliente_sistema,
-                                 cs.nombre_comercial AS cliente_nombre_comercial
+                                 cs.nombre_comercial AS cliente_nombre_comercial,
+                                 cs.plan AS cliente_plan, cs.plan_expira AS cliente_plan_expira
                           FROM bots b
                           LEFT JOIN clientes_sistema cs ON cs.id = b.cliente_sistema_id
                           ORDER BY b.creado_en DESC`);
@@ -689,7 +690,8 @@ router.get('/bots', auth, async (req, res) => {
       // Cliente: ve todos los bots asignados a su empresa
       bots = await query(
         `SELECT b.*, cs.razon_social AS cliente_sistema,
-                cs.nombre_comercial AS cliente_nombre_comercial
+                cs.nombre_comercial AS cliente_nombre_comercial,
+                cs.plan AS cliente_plan, cs.plan_expira AS cliente_plan_expira
          FROM bots b
          LEFT JOIN clientes_sistema cs ON cs.id = b.cliente_sistema_id
          WHERE b.cliente_sistema_id = ?
@@ -700,7 +702,8 @@ router.get('/bots', auth, async (req, res) => {
       // Fallback: usuario sin cliente_sistema_id (usuario_bots legacy)
       bots = await query(
         `SELECT b.*, cs.razon_social AS cliente_sistema,
-                cs.nombre_comercial AS cliente_nombre_comercial
+                cs.nombre_comercial AS cliente_nombre_comercial,
+                cs.plan AS cliente_plan, cs.plan_expira AS cliente_plan_expira
          FROM bots b
          INNER JOIN usuario_bots ub ON ub.bot_id = b.id AND ub.usuario_id = ?
          LEFT JOIN clientes_sistema cs ON cs.id = b.cliente_sistema_id
@@ -1197,10 +1200,10 @@ router.get('/bots/pendientes', auth, adminBotOnly, async (_req, res) => {
   }
 });
 
-// ─── UTILIDAD: LISTAR NÚMEROS DEL WABA (solo root) ───────────
+// ─── UTILIDAD: LISTAR NÚMEROS DEL WABA (administrador+) ─────
 // Ayuda al admin a verificar qué números tiene registrados en Meta
 // y a descubrir el WABA_ID si aún no lo tiene configurado.
-router.get('/meta/numeros', auth, rootOnly, async (_req, res) => {
+router.get('/meta/numeros', auth, adminOnly, async (_req, res) => {
   try {
     const wabaId       = process.env.WABA_ID;
     const platformToken = process.env.WHATSAPP_TOKEN;

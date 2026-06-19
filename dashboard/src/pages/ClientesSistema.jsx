@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   Building2, Plus, Search, X, Loader2, Check, Bot, Users,
   ChevronLeft, UserPlus, Boxes, Shield, BadgeCheck, Headphones,
-  Ban, Power, CreditCard, ChevronRight, Calendar
+  Ban, Power, CreditCard, ChevronRight
 } from 'lucide-react'
 import { api } from '../lib/api.js'
 import { useAuth, ROL_LABELS } from '../context/AuthContext.jsx'
@@ -63,15 +63,15 @@ function RolBadge({ rol }) {
 }
 
 // ─── MODAL CAMBIAR PLAN ───────────────────────────────────────
-function ModalCambiarPlan({ bot, onClose, onGuardado }) {
-  const [plan, setPlan]     = useState(bot.plan || 'demo')
+function ModalCambiarPlan({ cliente, onClose, onGuardado }) {
+  const [plan, setPlan]     = useState(cliente.plan || 'demo')
   const [renovar, setRenovar] = useState(false)
   const [saving, setSaving]   = useState(false)
 
   async function guardar() {
     setSaving(true)
     try {
-      await api.actualizarBot(bot.id, { plan, renovar_plan: renovar })
+      await api.actualizarClienteSistema(cliente.id, { plan, renovar_plan: renovar })
       onGuardado()
       onClose()
     } catch (err) { alert(err.message) }
@@ -84,7 +84,7 @@ function ModalCambiarPlan({ bot, onClose, onGuardado }) {
         <div className="flex items-center justify-between border-b border-gray-800 px-5 py-4">
           <div>
             <h3 className="font-semibold text-gray-100">Cambiar plan</h3>
-            <p className="mt-0.5 text-xs text-gray-500">{bot.nombre}</p>
+            <p className="mt-0.5 text-xs text-gray-500">{cliente.nombre_comercial || cliente.razon_social}</p>
           </div>
           <button onClick={onClose} className="p-1 text-gray-500 hover:text-gray-300"><X size={18} /></button>
         </div>
@@ -313,7 +313,7 @@ function ModalCrearUsuario({ clienteId, bots, onClose, onCreado }) {
                       onChange={() => toggleBot(b.id)} className="accent-brand-500" />
                     <Boxes size={14} className="text-gray-500" />
                     <span className="text-sm text-gray-300">{b.nombre}</span>
-                    <span className="ml-auto text-xs text-gray-600">{b.plan}</span>
+                    <span className="ml-auto text-xs text-gray-600 capitalize">{b.tipo}</span>
                   </label>
                 ))}
               </div>
@@ -338,7 +338,7 @@ function DetalleCliente({ cliente, usuarios, bots, onBack, onActualizar }) {
   const [tab, setTab]             = useState('usuarios')
   const [toggling, setToggling]   = useState(false)
   const [modalUsuario, setModalUsuario]   = useState(false)
-  const [modalPlan, setModalPlan]         = useState(null)   // bot object
+  const [modalPlan, setModalPlan]         = useState(false)
   const [formDatos, setFormDatos] = useState({ ...cliente })
   const [savingDatos, setSavingDatos] = useState(false)
   const [errorDatos, setErrorDatos]   = useState('')
@@ -438,16 +438,24 @@ function DetalleCliente({ cliente, usuarios, bots, onBack, onActualizar }) {
 
         {/* Stats strip */}
         <div className="mt-5 flex flex-wrap gap-5 border-t border-gray-800/60 pt-4 items-center">
-          {/* Plan badge */}
-          {cliente.plan && (
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${PLAN_BADGE_COLOR[cliente.plan] || PLAN_BADGE_COLOR.demo}`}>
-              <CreditCard size={11} />
-              {PLANES.find(p => p.value === cliente.plan)?.label || cliente.plan}
-              {cliente.plan_expira && cliente.plan !== 'lifetime' && (
-                <span className="opacity-60">· vence {cliente.plan_expira}</span>
-              )}
-            </span>
-          )}
+          {/* Plan badge + cambiar */}
+          <div className="flex items-center gap-2">
+            {cliente.plan && (
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ${PLAN_BADGE_COLOR[cliente.plan] || PLAN_BADGE_COLOR.demo}`}>
+                <CreditCard size={11} />
+                {PLANES.find(p => p.value === cliente.plan)?.label || cliente.plan}
+                {cliente.plan_expira && cliente.plan !== 'lifetime' && (
+                  <span className="opacity-60">· vence {cliente.plan_expira}</span>
+                )}
+              </span>
+            )}
+            <button
+              onClick={() => setModalPlan(true)}
+              className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-brand-400 border border-gray-700 hover:border-brand-500/30 hover:bg-brand-500/5 rounded-full px-2.5 py-1 transition-colors"
+            >
+              <CreditCard size={10} /> Cambiar plan
+            </button>
+          </div>
           <div className="flex items-center gap-2 text-sm">
             <Boxes size={15} className="text-brand-400" />
             <span className="font-semibold text-gray-200">{botsCliente.length}</span>
@@ -570,10 +578,8 @@ function DetalleCliente({ cliente, usuarios, bots, onBack, onActualizar }) {
                 <thead>
                   <tr className="text-left text-xs text-gray-500 border-b border-gray-800">
                     <th className="px-5 py-3 font-medium">Bot</th>
-                    <th className="px-3 py-3 font-medium">Plan</th>
-                    <th className="px-3 py-3 font-medium">Vencimiento</th>
+                    <th className="px-3 py-3 font-medium">Número</th>
                     <th className="px-3 py-3 font-medium">Estado</th>
-                    <th className="px-3 py-3 font-medium">Acción</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -584,18 +590,9 @@ function DetalleCliente({ cliente, usuarios, bots, onBack, onActualizar }) {
                         <p className="text-xs font-mono text-gray-600 capitalize">{b.tipo}</p>
                       </td>
                       <td className="px-3 py-3">
-                        <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium ${PLAN_COLOR[b.plan] || PLAN_COLOR.demo}`}>
-                          <CreditCard size={11} /> {b.plan}
+                        <span className="text-xs text-gray-400">
+                          {b.numero_display || <span className="text-gray-600">Sin número</span>}
                         </span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                          {b.plan === 'lifetime'
-                            ? <span className="text-amber-400">Sin vencimiento</span>
-                            : b.plan_expira
-                              ? <><Calendar size={11} className="text-gray-600" />{b.plan_expira}</>
-                              : <span className="text-gray-600">—</span>}
-                        </div>
                       </td>
                       <td className="px-3 py-3">
                         <span className={`inline-flex text-xs px-2 py-0.5 rounded-full border ${
@@ -603,13 +600,6 @@ function DetalleCliente({ cliente, usuarios, bots, onBack, onActualizar }) {
                         }`}>
                           {b.activo ? 'Activo' : 'Inactivo'}
                         </span>
-                      </td>
-                      <td className="px-3 py-3">
-                        <button
-                          onClick={() => setModalPlan(b)}
-                          className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-brand-400 transition-colors px-2.5 py-1 rounded-lg border border-gray-800 hover:border-brand-500/30 hover:bg-brand-500/5">
-                          <CreditCard size={11} /> Cambiar plan
-                        </button>
                       </td>
                     </tr>
                   ))}
@@ -714,8 +704,8 @@ function DetalleCliente({ cliente, usuarios, bots, onBack, onActualizar }) {
           onClose={() => setModalUsuario(false)} onCreado={onActualizar} />
       )}
       {modalPlan && (
-        <ModalCambiarPlan bot={modalPlan}
-          onClose={() => setModalPlan(null)} onGuardado={onActualizar} />
+        <ModalCambiarPlan cliente={cliente}
+          onClose={() => setModalPlan(false)} onGuardado={onActualizar} />
       )}
     </div>
   )

@@ -11,6 +11,13 @@ const TIPOS = {
   restaurant: { emoji: '🍽️', label: 'Restaurant',       color: 'amber', desc: 'Reservas de mesa, delivery y pedidos' },
 }
 
+const PLAN_BADGE = {
+  demo:     'bg-gray-700 text-gray-400',
+  mensual:  'bg-blue-500/15 text-blue-400',
+  anual:    'bg-brand-500/15 text-brand-400',
+  lifetime: 'bg-amber-500/15 text-amber-400',
+}
+
 const COLOR = {
   brand: { badge: 'bg-brand-500/10 text-brand-400 border-brand-500/20', ring: 'ring-brand-500/20' },
   blue:  { badge: 'bg-blue-500/10 text-blue-400 border-blue-500/20',    ring: 'ring-blue-500/20'  },
@@ -240,8 +247,17 @@ export function MisBots() {
 
                       <EstadoConexionBadge bot={bot} />
 
-                      <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500">
-                        {esAdminBot && <span>Cliente: <span className={bot.cliente_sistema ? 'text-blue-400' : 'text-amber-400'}>{bot.cliente_nombre_comercial || bot.cliente_sistema || 'Sin asignar'}</span></span>}
+                      <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500 items-center">
+                        {esAdminBot && (
+                          <span className="flex items-center gap-1.5">
+                            Cliente: <span className={bot.cliente_sistema ? 'text-blue-400' : 'text-amber-400'}>{bot.cliente_nombre_comercial || bot.cliente_sistema || 'Sin asignar'}</span>
+                            {bot.cliente_plan && (
+                              <span className={`px-1.5 py-0.5 rounded-full font-semibold text-[10px] ${PLAN_BADGE[bot.cliente_plan] || PLAN_BADGE.demo}`}>
+                                {bot.cliente_plan}
+                              </span>
+                            )}
+                          </span>
+                        )}
                         {bot.admin_phone && <span>Admin: <span className="font-mono text-gray-400">{bot.admin_phone}</span></span>}
                         {bot.tipo_conexion === 'gestionado' && <span className="text-gray-600">Número gestionado por plataforma</span>}
                         {bot.tipo_conexion === 'propio'     && <span className="text-gray-600">Número propio conectado</span>}
@@ -454,8 +470,6 @@ function BotModal({ bot, onClose, onSaved }) {
     nombre:      bot?.nombre      || '',
     tipo:        bot?.tipo        || 'grass',
     admin_phone: bot?.admin_phone || '',
-    plan:        bot?.plan        || 'demo',
-    renovar_plan: false,
     config: bot?.config || {}
   })
   const [saving, setSaving] = useState(false)
@@ -601,29 +615,6 @@ function BotModal({ bot, onClose, onSaved }) {
                 </>
               )}
 
-              {/* Plan y vigencia automática: solo para adminBot+ */}
-              {!isNew && esAdminBot && (
-                <div className="space-y-3 rounded-xl border border-gray-700 bg-gray-800/50 p-4">
-                  <div>
-                    <label className="label">Plan</label>
-                    <select className="input" value={form.plan} onChange={e => set('plan', e.target.value)}>
-                      <option value="demo">Demo · 5 días</option>
-                      <option value="mensual">Mensual · 30 días</option>
-                      <option value="anual">Anual · 365 días</option>
-                      <option value="lifetime">De por vida</option>
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div><p className="text-gray-500">Inicio actual</p><p className="mt-0.5 text-gray-300">{bot?.plan_inicio || 'Sin asignar'}</p></div>
-                    <div><p className="text-gray-500">Vencimiento actual</p><p className="mt-0.5 text-gray-300">{bot?.plan_expira || (bot?.plan === 'lifetime' ? 'Sin vencimiento' : 'Sin asignar')}</p></div>
-                  </div>
-                  <label className="flex cursor-pointer items-start gap-2 text-xs text-gray-400">
-                    <input type="checkbox" className="mt-0.5 accent-brand-500" checked={form.renovar_plan}
-                      onChange={e => set('renovar_plan', e.target.checked)} />
-                    <span>Renovar desde hoy aunque el plan no cambie. Las fechas se calcularán automáticamente.</span>
-                  </label>
-                </div>
-              )}
               {/* Para clientes: mostrar plan del cliente (solo lectura) */}
               {!isNew && esCliente && planCliente && (
                 <div className="bg-gray-800 rounded-lg px-4 py-3 flex items-center justify-between">
